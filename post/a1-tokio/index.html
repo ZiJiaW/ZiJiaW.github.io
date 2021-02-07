@@ -12,7 +12,7 @@
 	<meta name="author" content="Allan Wang"><meta name="keywords" content="Rust,Tokio"><meta name="description" content="阅读新版tokio文档，顺便翻译一下吧"><meta property="og:title" content="Tokio Guide 中文翻译" />
 <meta property="og:description" content="阅读新版tokio文档，顺便翻译一下吧" />
 <meta property="og:type" content="article" />
-<meta property="og:url" content="http://example.org/post/a1-tokio/" />
+<meta property="og:url" content="https://zijiaw.github.io/post/post/a1-tokio/" />
 <meta property="article:published_time" content="2021-01-18T00:00:00+00:00" />
 <meta property="article:modified_time" content="2021-01-18T00:00:00+00:00" />
 
@@ -20,21 +20,21 @@
 <meta name="twitter:title" content="Tokio Guide 中文翻译"/>
 <meta name="twitter:description" content="阅读新版tokio文档，顺便翻译一下吧"/>
 
-	<link rel="stylesheet" type="text/css" media="screen" href="/css/normalize.css" />
-	<link rel="stylesheet" type="text/css" media="screen" href="/css/main.css" />
-	<link rel="stylesheet" type="text/css" media="screen" href="/css/all.css" />
-	<link rel="stylesheet" href="/css/katex.min.css" crossorigin="anonymous">
-	<script defer src="/js/katex.min.js" integrity="sha384-y23I5Q6l+B6vatafAwxRu/0oK/79VlbSz7Q9aiSZUvyWYIYsd+qj+o24G5ZU2zJz" crossorigin="anonymous"></script>
-	<script defer src="/js/auto-render.min.js" integrity="sha384-kWPLUVMOks5AQFrykwIup5lo0m3iMkkHrD0uJ4H5cjeGihAutqP0yW0J6dpFiVkI" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script><title>Tokio Guide 中文翻译 | 一只特立独行的猫</title></head>
+	<link rel="stylesheet" type="text/css" media="screen" href="/post/css/normalize.css" />
+	<link rel="stylesheet" type="text/css" media="screen" href="/post/css/main.css" />
+	<link rel="stylesheet" type="text/css" media="screen" href="/post/css/all.css" />
+	<link rel="stylesheet" href="/post/css/katex.min.css" crossorigin="anonymous">
+	<script defer src="/post/js/katex.min.js" integrity="sha384-y23I5Q6l+B6vatafAwxRu/0oK/79VlbSz7Q9aiSZUvyWYIYsd+qj+o24G5ZU2zJz" crossorigin="anonymous"></script>
+	<script defer src="/post/js/auto-render.min.js" integrity="sha384-kWPLUVMOks5AQFrykwIup5lo0m3iMkkHrD0uJ4H5cjeGihAutqP0yW0J6dpFiVkI" crossorigin="anonymous" onload="renderMathInElement(document.body);"></script><title>Tokio Guide 中文翻译 | 一只特立独行的猫</title></head>
 <body><header>
 	
 	<div id="avatar">
-		<a href="http://example.org/">
-		  <img src="/img/avatar.jpg" alt="一只特立独行的猫">
+		<a href="https://zijiaw.github.io/post/">
+		  <img src="/post/img/avatar.jpg" alt="一只特立独行的猫">
 		</a>
 	</div>
 	
-	<div id="titletext"><h2 id="title"><a href="http://example.org/">一只特立独行的猫</a></h2></div>
+	<div id="titletext"><h2 id="title"><a href="https://zijiaw.github.io/post/">一只特立独行的猫</a></h2></div>
 	<div id="title-description"><p id="subtitle">记录一些笔记、翻译、感想，有时无病呻吟</p><div id="social">
 			<nav>
 				<ul>
@@ -47,15 +47,15 @@
 		<nav>
 			<ul>
 				
-				<li><a href="/">Home</a></li>
+				<li><a href="/post/">Home</a></li>
 				
-				<li><a href="/post">All Posts</a></li>
+				<li><a href="/post/post">All Posts</a></li>
 				
-				<li><a href="/about">About</a></li>
+				<li><a href="/post/about">About</a></li>
 				
-				<li><a href="/tags">Tags</a></li>
+				<li><a href="/post/tags">Tags</a></li>
 				
-				<li><a href="/categories">Categories</a></li>
+				<li><a href="/post/categories">Categories</a></li>
 				
 			</ul>
 		</nav>
@@ -1225,7 +1225,7 @@ note: future is not `Send` as this value is used across an await
 			
 			
 			
-			<a href="/categories/%e6%8a%80%e6%9c%af%e6%96%87%e6%a1%a3/"> 技术文档 </a>
+			<a href="/post/categories/%e6%8a%80%e6%9c%af%e6%96%87%e6%a1%a3/"> 技术文档 </a>
 			
 			
 			
@@ -1248,7 +1248,7 @@ note: future is not `Send` as this value is used across an await
 			
 			
 			
-			<a href="/series/rust%e7%b3%bb%e5%88%97/"> rust系列 </a>
+			<a href="/post/series/rust%e7%b3%bb%e5%88%97/"> rust系列 </a>
 			
 			
 			
@@ -1271,13 +1271,13 @@ note: future is not `Send` as this value is used across an await
 			
 			
 			
-			<a href="/tags/rust/"> rust </a>
+			<a href="/post/tags/rust/"> rust </a>
 			
 			
 			
 			
 			
-			<a href="/tags/tokio/"> tokio </a>
+			<a href="/post/tags/tokio/"> tokio </a>
 			
 			
 			

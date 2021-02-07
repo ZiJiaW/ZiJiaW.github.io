@@ -2,21 +2,21 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 	<channel>
 		<title>Tags on 一只特立独行的猫</title>
-		<link>http://example.org/tags/</link>
-		<description>Recent content in Tags on example.org</description>
+		<link>https://zijiaw.github.io/post/tags/</link>
+		<description>Recent content in Tags on zijiaw.github.io</description>
 		<generator>Hugo -- gohugo.io</generator>
 		<language>zh-cn</language>
 		<copyright>© Copyright notice | Vitae theme for Hugo</copyright>
 		<lastBuildDate>Mon, 18 Jan 2021 00:00:00 +0000</lastBuildDate>
 		
-		<atom:link href="http://example.org/tags/index.xml" rel="self" type="application/rss+xml" />
+		<atom:link href="https://zijiaw.github.io/post/tags/index.xml" rel="self" type="application/rss+xml" />
 		
 		<item>
 			<title>Rust</title>
-			<link>http://example.org/tags/rust/</link>
+			<link>https://zijiaw.github.io/post/tags/rust/</link>
 			<pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
 			
-			<guid>http://example.org/tags/rust/</guid>
+			<guid>https://zijiaw.github.io/post/tags/rust/</guid>
 			<description>
 				
 				
@@ -25,10 +25,10 @@
 		</item>
 		<item>
 			<title>Tokio</title>
-			<link>http://example.org/tags/tokio/</link>
+			<link>https://zijiaw.github.io/post/tags/tokio/</link>
 			<pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
 			
-			<guid>http://example.org/tags/tokio/</guid>
+			<guid>https://zijiaw.github.io/post/tags/tokio/</guid>
 			<description>
 				
 				

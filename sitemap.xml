@@ -3,57 +3,57 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
-    <loc>http://example.org/categories/</loc>
+    <loc>https://zijiaw.github.io/post/categories/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/post/</loc>
+    <loc>https://zijiaw.github.io/post/post/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/tags/rust/</loc>
+    <loc>https://zijiaw.github.io/post/tags/rust/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/series/rust%E7%B3%BB%E5%88%97/</loc>
+    <loc>https://zijiaw.github.io/post/series/rust%E7%B3%BB%E5%88%97/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/series/</loc>
+    <loc>https://zijiaw.github.io/post/series/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/tags/</loc>
+    <loc>https://zijiaw.github.io/post/tags/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/tags/tokio/</loc>
+    <loc>https://zijiaw.github.io/post/tags/tokio/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/post/a1-tokio/</loc>
+    <loc>https://zijiaw.github.io/post/post/a1-tokio/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/</loc>
+    <loc>https://zijiaw.github.io/post/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/categories/%E6%8A%80%E6%9C%AF%E6%96%87%E6%A1%A3/</loc>
+    <loc>https://zijiaw.github.io/post/categories/%E6%8A%80%E6%9C%AF%E6%96%87%E6%A1%A3/</loc>
     <lastmod>2021-01-18T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>http://example.org/about/</loc>
+    <loc>https://zijiaw.github.io/post/about/</loc>
     <priority>0</priority>
   </url>
   
