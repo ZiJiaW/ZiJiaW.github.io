@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+	<channel>
+		<title>技术文档 on 一只特立独行的猫</title>
+		<link>http://example.org/categories/%E6%8A%80%E6%9C%AF%E6%96%87%E6%A1%A3/</link>
+		<description>Recent content in 技术文档 on example.org</description>
+		<generator>Hugo -- gohugo.io</generator>
+		<language>zh-cn</language>
+		<copyright>© Copyright notice | Vitae theme for Hugo</copyright>
+		<lastBuildDate>Mon, 18 Jan 2021 00:00:00 +0000</lastBuildDate>
+		
+		<atom:link href="http://example.org/categories/%E6%8A%80%E6%9C%AF%E6%96%87%E6%A1%A3/index.xml" rel="self" type="application/rss+xml" />
+		
+		<item>
+			<title>Tokio Guide 中文翻译</title>
+			<link>http://example.org/post/a1-tokio/</link>
+			<pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
+			
+			<guid>http://example.org/post/a1-tokio/</guid>
+			<description>
+				
+				阅读新版tokio文档，顺便翻译一下吧
+				
+			</description>
+		</item>
+		
+	</channel>
+</rss>
