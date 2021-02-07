@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 	<channel>
-		<title>Posts on 一只特立独行的猫</title>
-		<link>https://zijiaw.github.io/post/post/</link>
-		<description>Recent content in Posts on zijiaw.github.io</description>
+		<title>其他 on 一只特立独行的猫</title>
+		<link>https://zijiaw.github.io/post/series/%E5%85%B6%E4%BB%96/</link>
+		<description>Recent content in 其他 on zijiaw.github.io</description>
 		<generator>Hugo -- gohugo.io</generator>
 		<language>zh-cn</language>
 		<copyright>© Copyright notice | Vitae theme for Hugo</copyright>
 		<lastBuildDate>Sun, 07 Feb 2021 00:00:00 +0000</lastBuildDate>
 		
-		<atom:link href="https://zijiaw.github.io/post/post/index.xml" rel="self" type="application/rss+xml" />
+		<atom:link href="https://zijiaw.github.io/post/series/%E5%85%B6%E4%BB%96/index.xml" rel="self" type="application/rss+xml" />
 		
 		<item>
 			<title>What&#39;s JWT?</title>
@@ -20,18 +20,6 @@
 			<description>
 				
 				angular JWT guide，译文
-				
-			</description>
-		</item>
-		<item>
-			<title>Tokio Guide 中文翻译</title>
-			<link>https://zijiaw.github.io/post/post/a1-tokio/</link>
-			<pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
-			
-			<guid>https://zijiaw.github.io/post/post/a1-tokio/</guid>
-			<description>
-				
-				读了下新版tokio文档，顺便翻译
 				
 			</description>
 		</item>
