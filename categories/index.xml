@@ -1,36 +1,36 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Categories on Example YinYong Blog</title>
-    <link>https://example.com/categories/</link>
-    <description>Recent content in Categories on Example YinYong Blog</description>
+    <title>Categories on 一只特立独行的猫</title>
+    <link>https://zijiaw.github.io/categories/</link>
+    <description>Recent content in Categories on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>en-us</language>
-    <lastBuildDate>Wed, 02 Apr 2014 00:00:00 +0000</lastBuildDate><atom:link href="https://example.com/categories/index.xml" rel="self" type="application/rss+xml" />
+    <language>zh-cn</language>
+    <lastBuildDate>Sun, 07 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/categories/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Develop</title>
-      <link>https://example.com/categories/develop/</link>
-      <pubDate>Wed, 02 Apr 2014 00:00:00 +0000</pubDate>
+      <title>other</title>
+      <link>https://zijiaw.github.io/categories/other/</link>
+      <pubDate>Sun, 07 Feb 2021 00:00:00 +0000</pubDate>
       
-      <guid>https://example.com/categories/develop/</guid>
+      <guid>https://zijiaw.github.io/categories/other/</guid>
       <description></description>
     </item>
     
     <item>
-      <title>Golang</title>
-      <link>https://example.com/categories/golang/</link>
-      <pubDate>Wed, 02 Apr 2014 00:00:00 +0000</pubDate>
+      <title>Rust</title>
+      <link>https://zijiaw.github.io/categories/rust/</link>
+      <pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
       
-      <guid>https://example.com/categories/golang/</guid>
+      <guid>https://zijiaw.github.io/categories/rust/</guid>
       <description></description>
     </item>
     
     <item>
-      <title>Docs</title>
-      <link>https://example.com/categories/docs/</link>
-      <pubDate>Mon, 10 Mar 2014 00:00:00 +0000</pubDate>
+      <title>Tokio</title>
+      <link>https://zijiaw.github.io/categories/tokio/</link>
+      <pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
       
-      <guid>https://example.com/categories/docs/</guid>
+      <guid>https://zijiaw.github.io/categories/tokio/</guid>
       <description></description>
     </item>
     

@@ -1,22 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>一只特立独行的猫</title>
-    <link>https://zijiaw.github.io/</link>
-    <description>Recent content on 一只特立独行的猫</description>
+    <title>Rust on 一只特立独行的猫</title>
+    <link>https://zijiaw.github.io/categories/rust/</link>
+    <description>Recent content in Rust on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sun, 07 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/index.xml" rel="self" type="application/rss+xml" />
-    <item>
-      <title>What&#39;s JWT?</title>
-      <link>https://zijiaw.github.io/posts/a2-jwt/</link>
-      <pubDate>Sun, 07 Feb 2021 00:00:00 +0000</pubDate>
-      
-      <guid>https://zijiaw.github.io/posts/a2-jwt/</guid>
-      <description>介绍 本文来自angular-jwt博客。
-什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。</description>
-    </item>
-    
+    <lastBuildDate>Mon, 18 Jan 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/categories/rust/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Tokio Guide 中文翻译</title>
       <link>https://zijiaw.github.io/posts/a1-tokio/</link>

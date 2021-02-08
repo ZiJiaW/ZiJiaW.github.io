@@ -1,45 +1,39 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Posts on Example YinYong Blog</title>
-    <link>https://example.com/posts/</link>
-    <description>Recent content in Posts on Example YinYong Blog</description>
+    <title>Posts on 一只特立独行的猫</title>
+    <link>https://zijiaw.github.io/posts/</link>
+    <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
-    <language>en-us</language>
-    <lastBuildDate>Wed, 02 Apr 2014 00:00:00 +0000</lastBuildDate><atom:link href="https://example.com/posts/index.xml" rel="self" type="application/rss+xml" />
+    <language>zh-cn</language>
+    <lastBuildDate>Sun, 07 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Migrate to Hugo from Jekyll</title>
-      <link>https://example.com/posts/migrate-from-jekyll/</link>
-      <pubDate>Mon, 10 Mar 2014 00:00:00 +0000</pubDate>
+      <title>What&#39;s JWT?</title>
+      <link>https://zijiaw.github.io/posts/a2-jwt/</link>
+      <pubDate>Sun, 07 Feb 2021 00:00:00 +0000</pubDate>
       
-      <guid>https://example.com/posts/migrate-from-jekyll/</guid>
-      <description>Move static content to static Jekyll has a rule that any directory not starting with _ will be copied as-is to the _site output. Hugo keeps all static content under static. You should therefore move it all there. With Jekyll, something that looked like
-▾ &amp;lt;root&amp;gt;/ ▾ images/ logo.png  should become
-▾ &amp;lt;root&amp;gt;/ ▾ static/ ▾ images/ logo.png  Additionally, you&amp;rsquo;ll want any files that should reside at the root (such as CNAME) to be moved to static.</description>
+      <guid>https://zijiaw.github.io/posts/a2-jwt/</guid>
+      <description>介绍 本文来自angular-jwt博客。
+什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。</description>
     </item>
     
     <item>
-      <title>(Hu)go Template Primer</title>
-      <link>https://example.com/posts/goisforlovers/</link>
-      <pubDate>Wed, 02 Apr 2014 00:00:00 +0000</pubDate>
+      <title>Tokio Guide 中文翻译</title>
+      <link>https://zijiaw.github.io/posts/a1-tokio/</link>
+      <pubDate>Mon, 18 Jan 2021 00:00:00 +0000</pubDate>
       
-      <guid>https://example.com/posts/goisforlovers/</guid>
-      <description>Hugo uses the excellent Go html/template library for its template engine. It is an extremely lightweight engine that provides a very small amount of logic. In our experience that it is just the right amount of logic to be able to create a good static website. If you have used other template systems from different languages or frameworks you will find a lot of similarities in Go templates.
-This document is a brief primer on using Go templates.</description>
-    </item>
-    
-    <item>
-      <title>Getting Started with Hugo</title>
-      <link>https://example.com/posts/hugoisforlovers/</link>
-      <pubDate>Wed, 02 Apr 2014 00:00:00 +0000</pubDate>
-      
-      <guid>https://example.com/posts/hugoisforlovers/</guid>
-      <description>Step 1. Install Hugo Go to Hugo releases and download the appropriate version for your OS and architecture.
-Save it somewhere specific as we will be using it in the next step.
-More complete instructions are available at Install Hugo
-Step 2. Build the Docs Hugo has its own example site which happens to also be the documentation site you are reading right now.
-Follow the following steps:
- Clone the Hugo repository Go into the repo Run hugo in server mode and build the docs Open your browser to http://localhost:1313  Corresponding pseudo commands:</description>
+      <guid>https://zijiaw.github.io/posts/a1-tokio/</guid>
+      <description>本文是阅读新版tokio文档，顺便翻译之作，啥时候读完啥时候写完咯。
+Intruduction 本教程将一步步带你构建一个简化的Redis客户端和服务器。我们首先介绍Rust中异步编程的基本概念，而后实现Redis命令的一个子集。
+Mini-Redis 安装完成Rust以后，请安装Mini-Redis服务器程序，这可以用来测试我们的程序：
+cargo install mini-redis你可以键入如下命令开始程序：
+mini-redis-server而后你可以另起一个命令行，用自带的客户端程序尝试获取键foo：
+mini-redis-cli get foo你将看到输出为nil。
+Hello Tokio 引入 我们首先编写非常基础的Tokio应用，它将连接到我们的Mini-Redis服务器，插入键值对&amp;lt;hello, world&amp;gt;，而后我们用cli包来获取它，以验证正确性。
+首先我们用carge创建新的Rust应用目录：
+cargo new my-rediscd my-redis而后编辑Cargo.toml，添加依赖：
+tokio = { version = &amp;quot;0.3&amp;quot;, features = [&amp;quot;full&amp;quot;] }mini-redis = &amp;quot;0.3&amp;quot;现在我们可以编辑main.rs，代码如下：
+use mini_redis::{client, Result}; #[tokio::main] pub async fn main() -&amp;gt; Result&amp;lt;()&amp;gt; { // Open a connection to the mini-redis address.  let mut client = client::connect(&amp;#34;127.0.0.1:6379&amp;#34;).await?; // Set the key &amp;#34;hello&amp;#34; with value &amp;#34;world&amp;#34;  client.</description>
     </item>
     
   </channel>
