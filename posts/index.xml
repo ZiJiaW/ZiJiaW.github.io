@@ -13,8 +13,25 @@
       <pubDate>Sun, 07 Feb 2021 00:00:00 +0000</pubDate>
       
       <guid>https://zijiaw.github.io/posts/a2-jwt/</guid>
-      <description>介绍 本文来自angular-jwt博客。
-什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。</description>
+      <description>本文内容来自angular-jwt博客。
+什么是JWT JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以Bearer &amp;lt;token&amp;gt;的形式随请求传递，作为用户的临时凭证。
+payload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：
+{&amp;quot;name&amp;quot;: &amp;quot;John Doe&amp;quot;,&amp;quot;email&amp;quot;: &amp;quot;john@johndoe.com&amp;quot;,&amp;quot;admin&amp;quot;: true}虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。
+payload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：
+{&amp;quot;alg&amp;quot;: &amp;quot;RS256&amp;quot;,&amp;quot;typ&amp;quot;: &amp;quot;JWT&amp;quot;}可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。
+signature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：
+ 用户提交用户名和密码到认证服务器 服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间 服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户 用户拿到JWT后，后续每次请求服务都会把JWT带上 应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了  应用服务器按如下方式从JWT中确认用户信息：
+ 首先验证签名和内容是一致的，也就是说消息没有被篡改过 通过payload中的id来找到用户  这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。
+签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。
+JWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。
+更多细节 编码 我们来实际看看一个JWT长啥样，下面这个例子来自于jwt.io的在线JWT认证工具：
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：
+Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。
+不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。
+现在我们把payload部分输入到base64解码网站，比如base64decode，就能得到下面这串内容：
+{&amp;quot;sub&amp;quot;:&amp;quot;1234567890&amp;quot;,&amp;quot;name&amp;quot;:&amp;quot;John Doe&amp;quot;, &amp;quot;admin&amp;quot;:true}这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。
+现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：
+{&amp;quot;iss&amp;quot;: &amp;quot;Identifier of our Authentication Server&amp;quot;,&amp;quot;iat&amp;quot;: 1504699136, &amp;quot;sub&amp;quot;: &amp;quot;github|353454354354353453&amp;quot;,&amp;quot;exp&amp;quot;: 1504699256} iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。</description>
     </item>
     
     <item>

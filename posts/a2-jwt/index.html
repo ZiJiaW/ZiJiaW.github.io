@@ -21,7 +21,7 @@
       "articleSection" : "posts",
       "name" : "What\u0027s JWT?",
       "headline" : "What\u0027s JWT?",
-      "description" : "介绍 本文来自angular-jwt博客。\n什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。",
+      "description" : "本文内容来自angular-jwt博客。\n什么是JWT JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以Bearer \u0026lt;token\u0026gt;的形式随请求传递，作为用户的临时凭证。\npayload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：\n{\r\u0026quot;name\u0026quot;: \u0026quot;John Doe\u0026quot;,\r\u0026quot;email\u0026quot;: \u0026quot;john@johndoe.com\u0026quot;,\r\u0026quot;admin\u0026quot;: true\r}\r虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。\npayload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：\n{\r\u0026quot;alg\u0026quot;: \u0026quot;RS256\u0026quot;,\r\u0026quot;typ\u0026quot;: \u0026quot;JWT\u0026quot;\r}\r可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。\nsignature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：\n 用户提交用户名和密码到认证服务器 服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间 服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户 用户拿到JWT后，后续每次请求服务都会把JWT带上 应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了  应用服务器按如下方式从JWT中确认用户信息：\n 首先验证签名和内容是一致的，也就是说消息没有被篡改过 通过payload中的id来找到用户  这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。\n签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。\nJWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。\n更多细节 编码 我们来实际看看一个JWT长啥样，下面这个例子来自于jwt.io的在线JWT认证工具：\neyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ\r你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：\nHeader: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\rPayload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9\rSignature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ\r但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。\n不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。\n现在我们把payload部分输入到base64解码网站，比如base64decode，就能得到下面这串内容：\n{\r\u0026quot;sub\u0026quot;:\u0026quot;1234567890\u0026quot;,\r\u0026quot;name\u0026quot;:\u0026quot;John Doe\u0026quot;, \u0026quot;admin\u0026quot;:true\r}\r这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。\n现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：\n{\r\u0026quot;iss\u0026quot;: \u0026quot;Identifier of our Authentication Server\u0026quot;,\r\u0026quot;iat\u0026quot;: 1504699136, \u0026quot;sub\u0026quot;: \u0026quot;github|353454354354353453\u0026quot;,\r\u0026quot;exp\u0026quot;: 1504699256\r}\r iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。",
       "inLanguage" : "en-US",
       "author" : "一只特立独行的猫",
       "creator" : "一只特立独行的猫",
@@ -38,10 +38,44 @@
 <title>What&#39;s JWT?</title>
   <meta property="og:title" content="What&#39;s JWT?" />
   <meta property="og:type" content="article" />
-  <meta property="og:description" content="介绍 本文来自angular-jwt博客。
-什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。" />
-  <meta name="description" content="介绍 本文来自angular-jwt博客。
-什么是JWT JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。" />
+  <meta property="og:description" content="本文内容来自angular-jwt博客。
+什么是JWT JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以Bearer &amp;lt;token&amp;gt;的形式随请求传递，作为用户的临时凭证。
+payload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：
+{&amp;quot;name&amp;quot;: &amp;quot;John Doe&amp;quot;,&amp;quot;email&amp;quot;: &amp;quot;john@johndoe.com&amp;quot;,&amp;quot;admin&amp;quot;: true}虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。
+payload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：
+{&amp;quot;alg&amp;quot;: &amp;quot;RS256&amp;quot;,&amp;quot;typ&amp;quot;: &amp;quot;JWT&amp;quot;}可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。
+signature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：
+ 用户提交用户名和密码到认证服务器 服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间 服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户 用户拿到JWT后，后续每次请求服务都会把JWT带上 应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了  应用服务器按如下方式从JWT中确认用户信息：
+ 首先验证签名和内容是一致的，也就是说消息没有被篡改过 通过payload中的id来找到用户  这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。
+签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。
+JWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。
+更多细节 编码 我们来实际看看一个JWT长啥样，下面这个例子来自于jwt.io的在线JWT认证工具：
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：
+Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。
+不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。
+现在我们把payload部分输入到base64解码网站，比如base64decode，就能得到下面这串内容：
+{&amp;quot;sub&amp;quot;:&amp;quot;1234567890&amp;quot;,&amp;quot;name&amp;quot;:&amp;quot;John Doe&amp;quot;, &amp;quot;admin&amp;quot;:true}这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。
+现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：
+{&amp;quot;iss&amp;quot;: &amp;quot;Identifier of our Authentication Server&amp;quot;,&amp;quot;iat&amp;quot;: 1504699136, &amp;quot;sub&amp;quot;: &amp;quot;github|353454354354353453&amp;quot;,&amp;quot;exp&amp;quot;: 1504699256} iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。" />
+  <meta name="description" content="本文内容来自angular-jwt博客。
+什么是JWT JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以Bearer &amp;lt;token&amp;gt;的形式随请求传递，作为用户的临时凭证。
+payload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：
+{&amp;quot;name&amp;quot;: &amp;quot;John Doe&amp;quot;,&amp;quot;email&amp;quot;: &amp;quot;john@johndoe.com&amp;quot;,&amp;quot;admin&amp;quot;: true}虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。
+payload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：
+{&amp;quot;alg&amp;quot;: &amp;quot;RS256&amp;quot;,&amp;quot;typ&amp;quot;: &amp;quot;JWT&amp;quot;}可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。
+signature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：
+ 用户提交用户名和密码到认证服务器 服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间 服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户 用户拿到JWT后，后续每次请求服务都会把JWT带上 应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了  应用服务器按如下方式从JWT中确认用户信息：
+ 首先验证签名和内容是一致的，也就是说消息没有被篡改过 通过payload中的id来找到用户  这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。
+签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。
+JWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。
+更多细节 编码 我们来实际看看一个JWT长啥样，下面这个例子来自于jwt.io的在线JWT认证工具：
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：
+Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。
+不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。
+现在我们把payload部分输入到base64解码网站，比如base64decode，就能得到下面这串内容：
+{&amp;quot;sub&amp;quot;:&amp;quot;1234567890&amp;quot;,&amp;quot;name&amp;quot;:&amp;quot;John Doe&amp;quot;, &amp;quot;admin&amp;quot;:true}这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。
+现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：
+{&amp;quot;iss&amp;quot;: &amp;quot;Identifier of our Authentication Server&amp;quot;,&amp;quot;iat&amp;quot;: 1504699136, &amp;quot;sub&amp;quot;: &amp;quot;github|353454354354353453&amp;quot;,&amp;quot;exp&amp;quot;: 1504699256} iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。" />
   <meta property="og:locale" content="zh-cn" />
 
   
@@ -125,10 +159,104 @@
 
         <div class="post-content markdown-body">
           
-          <h2 id="介绍">介绍</h2>
-<p>本文来自<a href="https://blog.angular-university.io/angular-jwt/">angular-jwt</a>博客。</p>
-<h2 id="什么是jwt">什么是JWT</h2>
-<p>JWT全称为JSON Web Token，其实只是JSON形式的文本，其包含一个特定声明。其核心特征是：我们只要看token就可以判断这个claim是否有效。</p>
+          <p>本文内容来自<a href="https://blog.angular-university.io/angular-jwt/">angular-jwt</a>博客。</p>
+<h1 id="什么是jwt">什么是JWT</h1>
+<p>JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以<code>Bearer &lt;token&gt;</code>的形式随请求传递，作为用户的临时凭证。</p>
+<p>payload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：</p>
+<pre><code>{
+  &quot;name&quot;: &quot;John Doe&quot;,
+  &quot;email&quot;: &quot;john@johndoe.com&quot;,
+  &quot;admin&quot;: true
+}
+</code></pre><p>虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。</p>
+<p>payload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：</p>
+<pre><code>{
+  &quot;alg&quot;: &quot;RS256&quot;,
+  &quot;typ&quot;: &quot;JWT&quot;
+}
+</code></pre><p>可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。</p>
+<p>signature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：</p>
+<ol>
+<li>用户提交用户名和密码到认证服务器</li>
+<li>服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间</li>
+<li>服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户</li>
+<li>用户拿到JWT后，后续每次请求服务都会把JWT带上</li>
+<li>应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了</li>
+</ol>
+<p>应用服务器按如下方式从JWT中确认用户信息：</p>
+<ol>
+<li>首先验证签名和内容是一致的，也就是说消息没有被篡改过</li>
+<li>通过payload中的id来找到用户</li>
+</ol>
+<p>这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。</p>
+<p>签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。</p>
+<p>JWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。</p>
+<h1 id="更多细节">更多细节</h1>
+<h2 id="编码">编码</h2>
+<p>我们来实际看看一个JWT长啥样，下面这个例子来自于<a href="https://jwt.io">jwt.io</a>的在线JWT认证工具：</p>
+<pre><code>eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+</code></pre><p>你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以<code>.</code>组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：</p>
+<pre><code>Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9
+Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+</code></pre><p>但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。</p>
+<p>不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。</p>
+<p>现在我们把payload部分输入到base64解码网站，比如<a href="https://www.base64decode.org/">base64decode</a>，就能得到下面这串内容：</p>
+<pre><code>{
+    &quot;sub&quot;:&quot;1234567890&quot;,
+    &quot;name&quot;:&quot;John Doe&quot;, 
+    &quot;admin&quot;:true
+}
+</code></pre><p>这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。</p>
+<p>现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：</p>
+<pre><code>{
+    &quot;iss&quot;: &quot;Identifier of our Authentication Server&quot;,
+    &quot;iat&quot;: 1504699136, 
+    &quot;sub&quot;: &quot;github|353454354354353453&quot;,
+    &quot;exp&quot;: 1504699256
+}
+</code></pre><ul>
+<li>iss指的是issuing entity，即颁发认证的认证服务器</li>
+<li>iat指的是此JWT的创建时间戳</li>
+<li>sub指服务器生成的用户的唯一标识符</li>
+<li>exp包含过期时间</li>
+</ul>
+<p>这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。</p>
+<p>下面我们再深入了解一下signature机制，JWT支持很多种签名，本文中我们会讲到HS256和RS256。</p>
+<h2 id="hs256和rs256">HS256和RS256</h2>
+<p>HS256数字签名算法基于一种哈希算法SHA256，那么什么是哈希呢？一个哈希函数接受一个数字串（任何计算机世界中的东西都可以用二进制串表示），输出一个数字串（称作哈希值），听起来很普通，但它需要满足如下四个性质：</p>
+<ol>
+<li>不可逆：无法从哈希值推断出原始数据是什么</li>
+<li>可重复：同样的输入必然计算出同样的哈希值</li>
+<li>无冲突：不同的输入必然计算出不同的哈希值</li>
+<li>不可预测：对原始输入的小改动就会让输出的哈希值产生很大的变化，也就是说原始数据是试不出来的，或者说计算成本极大。</li>
+</ol>
+<p>那么问题来了，哈希算法是公开的，也就是说我们任何人都可以基于某种哈希算法把字符串做哈希，上面说到签名需要密钥，那密钥扮演的角色是什么呢？</p>
+<p>HS256签名并不仅仅是哈希，我们额外把密钥加在要哈希的字符串（payload和header）后面，一起用SHA256计算出哈希值，这样的结果称为SHA-256 HMAC，即Hash-based Message Authentication Code，实现这一过程的函数通常称为HMAC-SHA256。这一计算出来的哈希值叫做HMAC，用作签名。</p>
+<p>由于我们可以假设只有服务器拥有这一密钥，因此当服务器对签名的验证通过后，我们断言payload没有被伪造过。</p>
+<p>总结一下，signature字段就是把payload和header拼起来做HMAC-SHA256签名，然后进行base64Url编码生成的字符串。</p>
+<p>既然HS256就可以很好地完成签名的任务了，那么另一个算法RS256的意义在哪呢？HS256算法制作的签名在验证的时候需要把密钥拼进去一起哈希，这就意味着所有服务器需要共享认证服务器用于发布token的密钥。这意味着如果我们要修改或者更新密钥，就必须同步到所有正在运行的服务器上，这很不方便，而且同步的过程中会导致部分服务器无法提供服务（其上面的密钥处于短暂的过期状态）。</p>
+<p>因此HS256算法的缺点就是：任何具备验证HS256签名的服务器同时也具有颁发制作HS256签名的能力，因为他们需要共享相同的密钥。解决这个问题需要用到一个更先进的算法——RS256，这也是许多现代JWT工具集使用的默认算法。</p>
+<p>在RS256算法中，我们的使命依然是制作签名用于身份认证，但是我们希望制作token的功能和验证token的功能分开，即只有认证服务器能够制作JWT，其他应用服务器只能够验证，而无法生成新的token。</p>
+<p>因此，我们需要用到RSA加密算法，生成公钥和私钥：</p>
+<ul>
+<li>私钥仅保存在认证服务器上，用于制作签名，但不能用于验证</li>
+<li>公钥用于验证签名的正确性，但无法制作签名，这样公钥不需要保密，因为攻击者即便拿到了公钥也无法伪造签名。</li>
+</ul>
+<p>RS256利用的是RSA加密算法，它并不是SHA256这样的哈希算法，因为其加密的内容是可以被解密的。我们看一下RSA的公钥长啥样：</p>
+<pre><code>-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDdlatRjRjogo3WojgGHFHYLugdUWAY9iR3fy4arWNA1KoS8kVw33cJibXr8bvwUAUparCwlvdbH6dvEOfou0/gCFQsHUfQrSDv+MuSUMAe8jzKE4qW+jK+xQU9a03GUnKHkkle+Q0pX/g6jXZ7r1/xAK5Do2kQ+X5xK9cipRgEKwIDAQAB
+-----END PUBLIC KEY-----  
+</code></pre><p>通常可以用OpenSSL之类的开源软件生成RSA的key，对应的私钥如下：</p>
+<pre><code>-----BEGIN RSA PRIVATE KEY-----
+MIICWwIBAAKBgQDdlatRjRjogo3WojgGHFHYLugdUWAY9iR3fy4arWNA1KoS8kVw33cJibXr8bvwUAUparCwlvdbH6dvEOfou0/gCFQsHUfQrSDv+MuSUMAe8jzKE4qW+jK+xQU9a03GUnKHkkle+Q0pX/g6jXZ7r1/xAK5Do2kQ+X5xK9cipRgEKwIDAQABAoGAD+onAtVye4ic7VR7V50DF9bOnwRwNXrARcDhq9LWNRrRGElESYYTQ6EbatXS3MCyjjX2eMhu/aF5YhXBwkppwxg+EOmXeh+MzL7Zh284OuPbkglAaGhV9bb6/5CpuGb1esyPbYW+Ty2PC0GSZfIXkXs76jXAu9TOBvD0ybc2YlkCQQDywg2R/7t3Q2OE2+yo382CLJdrlSLVROWKwb4tb2PjhY4XAwV8d1vy0RenxTB+K5Mu57uVSTHtrMK0GAtFr833AkEA6avx20OHo61Yela/4k5kQDtjEf1N0LfI+BcWZtxsS3jDM3i1Hp0KSu5rsCPb8acJo5RO26gGVrfAsDcIXKC+bQJAZZ2XIpsitLyPpuiMOvBbzPavd4gY6Z8KWrfYzJoI/Q9FuBo6rKwl4BFoToD7WIUS+hpkagwWiz+6zLoX1dbOZwJACmH5fSSjAkLRi54PKJ8TFUeOP15h9sQzydI8zJU+upvDEKZsZc/UhT/SySDOxQ4G/523Y0sz/OZtSWcol/UMgQJALesy++GdvoIDLfJX5GBQpuFgFenRiRDabxrE9MNUZ2aPFaFp+DyAe+b4nDwuJaW2LURbr8AEZga7oQj0uYxcYw==
+-----END RSA PRIVATE KEY-----  
+</code></pre><p>对于公钥来说，通常不需要刻意保密，攻击者刻意很容易拿到，但是私钥是保密的。</p>
+<p>我们知道私钥加密，公钥可以解密，反之亦然。那为什么不直接把payload和header用私钥加密，作为签名。然后验证的流程就是：用公钥解密后比对原字符串。这听起来很有道理，原理上也没啥问题，但是在实践中没有这么顺利，原因是RSA加密算法相对于哈希算法来说，太慢了！payload如果很长，这样做耗时太多。</p>
+<p>因此RS256的全称是RSA-SHA-256，我们依然会用到SHA-256哈希算法。整个想法很简单——payload太长，我就用SHA-256算法把它哈希一下，然后再用RSA制作签名，这样的话，被加密的哈希串长度只有固定的256bit，速度很快。</p>
+<p>验证签名的过程如出一辙：把header和payload作SHA-256哈希，然后用公钥解密签名，比对两个哈希值即可。</p>
+<p>使用RS256，我们可以让整个过程的安全性更高（只有特定的认证服务器会用到私钥），当然对于单服务器的应用而言二者差别不大，但是对于微服务集群来说，一定要选择RS256。</p>
+<p>同时由于公钥可以公开这一特性，我们甚至不需要在所有服务器上都配置公钥，可以专门配置密钥管理的终端，让所有验证服务动态获取对应的公钥，这样就避免了之前HS256的密钥同步问题——可以随时低成本地更新密钥。</p>
 
         </div>
 
