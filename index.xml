@@ -6,11 +6,32 @@
     <description>Recent content on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sun, 07 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 08 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Paxos 算法</title>
+      <link>https://zijiaw.github.io/posts/a3-paxos/</link>
+      <pubDate>Mon, 08 Feb 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a3-paxos/</guid>
+      <description>共识问题  分布式系统中的节点通信存在两种模型：共享内存（Shared memory）和消息传递（Messages passing）。基于消息传递通信模型的分布式系统，不可避免的会发生以下错误：进程可能会变慢、被杀死或者重启，消息可能会延迟、丢失、重复，我们不考虑可能出现恶意的消息篡改即拜占庭错误的情况。我们希望分布式系统中的多个进程能够就某些值或状态达成一致，即多个进程像是一个整体一样，了解彼此的一些状态，这就是共识。
+Paxos算法解决的问题是：如何在一个可能发生上述异常的分布式系统中就某个值达成一致，保证不论发生以上任何异常，都不会破坏共识。一个典型的场景是，在一个分布式数据库系统中，如果各节点的初始状态一致，每个节点都执行相同的操作序列，那么他们最后就能到达一个一致的状态。为保证每个节点执行相同的命令序列，需要在每一条指令上执行一个“共识算法”以保证每个节点执行的指令一致。
+Basic Paxos  Paxos算法有多种变体，但其基本思想均来源于basic paxos，这也是Lamport在论文中最先详细阐述的算法。在basic paxos中，我们对于共识的要求如下：
+ 安全性（坏事不会发生）  从头到尾只有一个值会被选择 当且仅当一个值被选择后，分布式系统中的服务器才能知道它被选择了   活性（好事最终会发生）  总会有某个被提出的值最终被选择 只要有一个值被选择，最终总会被服务器知道    在这里活性的条件是：只要分布式系统中超过半数的服务器还在工作，且其通信延时正常。
+在此我们定义两类进程，这些进程可以运行在同一台机器上，也可以运行在不同的机器上：
+ Proposer：接收来自客户端的请求，主动发起提议（propose some value）。 Acceptor：被动响应来自proposer的请求，也起到投票者的作用，每次投票称为accept，当多数acceptor接受了某个值，该值即被选择，同时保存被选择的值。  想要达成共识，一个最简单的想法是只设置一个acceptor，这样共识性显然是满足的，但是一旦该节点crash，整个系统就无法工作。因此采用quorum机制：设置多个acceptor（通常是奇数个），当过半的acceptor接受了一个值，就确定该值被选择。
+现在我们考虑如何设计proposer和acceptor的运行机制，使得系统满足一致性。
+  Accept First Value
+每个acceptor简单地接受其得到的第一个值，这显然是不行的，因为网络具有延迟，可能多个并发的提议会交错到达各个acceptor，导致没有任何一个值被过半acceptor接受，系统不满足活性。
+  Accept Every Value
+如果接受所有值，也不可行，在这种情况下，随着多个提议到来，很可能会有多个值被选择。
+  因此，在多acceptor的情况下，其必须能够接受多个值，但也需要在一些情况下拒绝一些值，例如：如果当前已经有一个值v1被选择了，那么后续所有的acceptor/proposer必须accept/propose相同的值——需要设计一套机制来保证。
+首先，由于网络RPC的不稳定性，每个提议需要一个唯一递增的序列号（proposal number），即每个proposer在发送新的proposal时，需要保证其序号大于之前见过的所有序号，且不会与其他proposer重复。一个简单地做法是按照余数来递增选择序号。</description>
+    </item>
+    
     <item>
       <title>What&#39;s JWT?</title>
       <link>https://zijiaw.github.io/posts/a2-jwt/</link>
-      <pubDate>Sun, 07 Feb 2021 00:00:00 +0000</pubDate>
+      <pubDate>Sat, 06 Feb 2021 00:00:00 +0000</pubDate>
       
       <guid>https://zijiaw.github.io/posts/a2-jwt/</guid>
       <description>本文内容来自angular-jwt博客。
