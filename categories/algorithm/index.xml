@@ -25,7 +25,8 @@ Basic Paxos  Paxos算法有多种变体，但其基本思想均来源于basic pa
   Accept Every Value
 如果接受所有值，也不可行，在这种情况下，随着多个提议到来，很可能会有多个值被选择。
   因此，在多acceptor的情况下，其必须能够接受多个值，但也需要在一些情况下拒绝一些值，例如：如果当前已经有一个值v1被选择了，那么后续所有的acceptor/proposer必须accept/propose相同的值——需要设计一套机制来保证。
-首先，由于网络RPC的不稳定性，每个提议需要一个唯一递增的序列号（proposal number），即每个proposer在发送新的proposal时，需要保证其序号大于之前见过的所有序号，且不会与其他proposer重复。一个简单地做法是按照余数来递增选择序号。</description>
+首先，由于网络RPC的不稳定性，每个提议需要一个唯一递增的序列号（proposal number），即每个proposer在发送新的proposal时，需要保证其序号大于之前见过的所有序号，且不会与其他proposer重复。一个简单的做法是按照余数来递增选择序号。
+如上图所示，当proposer为一个新的值选定序号后，首先向所有acceptor广播Prepare请求，</description>
     </item>
     
   </channel>

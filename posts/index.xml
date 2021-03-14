@@ -6,7 +6,23 @@
     <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Mon, 08 Feb 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 14 Mar 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Reactor模式</title>
+      <link>https://zijiaw.github.io/posts/a4-reactor/</link>
+      <pubDate>Sun, 14 Mar 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a4-reactor/</guid>
+      <description>本文分析reactor模式，这是广泛应用于许多网络框架下的异步IO模式。
+I/O I/O通常是现今计算机运行中最慢的操作，无论是读取文件还是网络传输。读取磁盘上的文件通常花费的时间在毫秒级，而一次内存的读取花费的时间在纳秒级。同样的，网络传输/磁盘读取的速度通常为以MB/s为单位，而内存存取速率通常以GB/s为单位。对于CPU来说，IO操作并不昂贵，但它通常会导致操作的延时。
+Blocking I/O 在传统的阻塞式IO编程中，一次包含I/O请求的函数调用会阻塞整个线程，直到IO操作完成，这通常导致一个函数的操作时间过长。在这种模式下，显然单个线程无法同时处理多个网络请求。因此，在几十年前的服务器编程中，传统的方式是为每个到来的网络连接开启一个线程（或者从线程池中取一个空闲线程），这样单个请求的读取过程即使阻塞了一个线程，也不会影响其他请求的处理。
+在这种模式下，任何有关IO的操作都会使得线程阻塞，这些操作包括读取socket，发送socket，读取文件，写文件，数据库请求等等。也就是说，在一次请求处理中，线程可能会阻塞很多次。在这期间实际上CPU是空闲的，而如果线程过多，线程的调度会加重CPU的负担——这是额外的消耗，特别是对于Linux这类重线程的操作系统，每个线程都耗费不小的内存空间，并带来上下文切换的开销。
+Non-blocking I/O 除了阻塞式IO，大多数现代操作系统支持另一种获取资源的方式——非阻塞式I/O。在这种模式下，涉及IO的系统调用总是立即返回，而不等待数据读写完成。如果在调用时数据未就绪，则调用会返回一个预定义的值，表示当前数据未准备好。
+例如，在Unix系统中，fcntl()函数可以用来控制一个已有的文件操作符，将其的读写模式改变为非阻塞（用O_NONBLOCK标志位）。一旦文件操作在非阻塞模式下，如果该文件还没有数据可读，则读操作会返回EAGAIN。
+最基本的使用非阻塞IO的编程范式是在一个循环里不断地轮询相应接口，直到有数据返回——这被称为忙等待。下面的伪代码展示了这一逻辑：
+resources = [socketA, socketB, pipeA];while(!resources.isEmpty()) {for(i = 0; i &amp;lt; resources.length; i++) {resource = resources[i];//try to readvar data = resource.read();if(data === NO_DATA_AVAILABLE)//there is no data to read at the momentcontinue;if(data === RESOURCE_CLOSED)//the resource was closed, remove it from the listresources.remove(i);else//some data was received, process itconsumeData(data);}}你可以看到，这么简单的代码已经可以在单线程里面处理多个I/O资源的读写了，但还不够高效。事实上，在上面的例子中，忙等待会浪费很多CPU时间——因为大多数时候资源都是不可用的。我们希望等到资源可用的时候能够自动通知线程，而不是线程一直循环着浪费CPU资源。</description>
+    </item>
+    
     <item>
       <title>Paxos 算法</title>
       <link>https://zijiaw.github.io/posts/a3-paxos/</link>
@@ -25,7 +41,8 @@ Basic Paxos  Paxos算法有多种变体，但其基本思想均来源于basic pa
   Accept Every Value
 如果接受所有值，也不可行，在这种情况下，随着多个提议到来，很可能会有多个值被选择。
   因此，在多acceptor的情况下，其必须能够接受多个值，但也需要在一些情况下拒绝一些值，例如：如果当前已经有一个值v1被选择了，那么后续所有的acceptor/proposer必须accept/propose相同的值——需要设计一套机制来保证。
-首先，由于网络RPC的不稳定性，每个提议需要一个唯一递增的序列号（proposal number），即每个proposer在发送新的proposal时，需要保证其序号大于之前见过的所有序号，且不会与其他proposer重复。一个简单地做法是按照余数来递增选择序号。</description>
+首先，由于网络RPC的不稳定性，每个提议需要一个唯一递增的序列号（proposal number），即每个proposer在发送新的proposal时，需要保证其序号大于之前见过的所有序号，且不会与其他proposer重复。一个简单的做法是按照余数来递增选择序号。
+如上图所示，当proposer为一个新的值选定序号后，首先向所有acceptor广播Prepare请求，</description>
     </item>
     
     <item>
