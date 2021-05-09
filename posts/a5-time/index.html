@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="Hugo 0.80.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="一只特立独行的猫" />
+  <meta property="og:url" content="https://zijiaw.github.io/posts/a5-time/" />
+  <link rel="canonical" href="https://zijiaw.github.io/posts/a5-time/" /><link rel="alternate" type="application/atom+xml" href="https://zijiaw.github.io/index.xml" title="一只特立独行的猫">
+
+  <script type="application/ld+json">
+  {
+      "@context" : "http://schema.org",
+      "@type" : "BlogPosting",
+      "mainEntityOfPage": {
+           "@type": "WebPage",
+           "@id": "https:\/\/zijiaw.github.io\/"
+      },
+      "articleSection" : "posts",
+      "name" : "浅谈Golang性能优化",
+      "headline" : "浅谈Golang性能优化",
+      "description" : "背景 最近在实习公司里负责一个性能比较敏感的服务（延迟P99在10ms），优化了之前出现的一些问题。这个服务之前在晚高峰期间的qps达到45w，接入了几个新功能后涨到50w\u002b，线上是部署了约500个8核8G的实例，因此平均下来每个实例的qps在900~1100之间。\n出现的问题如下：\n  高负载下内存占用率极高，保持在7G左右，这样一抖动很容易OOM，现实是晚高峰期间都会有十几次OOM报警。\n  延迟周期性抖动，用较高qps压测显示每两分钟延迟升高，CPU占用率抖动达到90%以上。在晚高峰下的表现为上游调用失败率（timeout）涨到1%左右。\n  内存占用 对于第一个问题，我仔细阅读了该服务的代码，发现在每次请求的处理中需要多次使用哈希表来处理数据，而且逻辑上这个哈希表无法优化掉。原先的作者是如此构造这个哈希表的：在kv数量小于100的时候使用16个shard的二维slice来模拟，在数量大于100后转而把数据放进map[int]int中。最后使用Golang标准库的sync.Pool来复用这些map。\n这么做粗看没什么问题，实际上问题大了，可能是之前服务的qps不高导致问题没有显现出来。通常我们使用sync.Pool是用于对象复用，也就是避免许多对象的重复内存分配，在对象用完以后把它Put到临时对象池里，尽量延迟它的回收，在下次申请同样的对象时从池子里拿。当然sync.Pool不是传统意义上的对象池，如果一些对象在一段时间内没有被重用，还是会被gc回收的。\n但是在这里，sync.Pool回收的对象是数组和map，在我们放进去的时候自然是需要把数组每一个shard给清空的（这样才能在下一次的时候方便使用），map也是如此。那么此时被回收的对象可以理解为空的map和slice，真正的数据已经失引用了，等待gc回收。\ngo的内存回收有GOGC变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。\n于是这里我做的优化是用sync.Pool复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：\ntype Node struct { key int val int next *Node } var NodePool *sync.Pool = \u0026amp;sync.Pool { New: func() interface{} { return \u0026amp;Node{} }, } 链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从NodePool中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。\nCPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。\n经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：https:\/\/draveness.me\/golang\/docs\/part3-runtime\/ch07-memory\/golang-garbage-collector\/：\n  清理终止阶段；\n暂停程序，所有的处理器在这时会进入安全点（Safe point）；\n如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；\n  标记阶段；\n将状态切换至 _GCmark、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；\n恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；\n开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；\n依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；\n使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；\n  标记终止阶段；\n暂停程序、将状态切换至 _GCmarktermination 并关闭辅助标记的用户程序；",
+      "inLanguage" : "en-US",
+      "author" : "一只特立独行的猫",
+      "creator" : "一只特立独行的猫",
+      "publisher": "一只特立独行的猫",
+      "accountablePerson" : "一只特立独行的猫",
+      "copyrightHolder" : "一只特立独行的猫",
+      "copyrightYear" : "2021",
+      "datePublished": "2021-05-09 00:00:00 \u002b0000 UTC",
+      "dateModified" : "2021-05-09 00:00:00 \u002b0000 UTC",
+      "url" : "https:\/\/zijiaw.github.io\/posts\/a5-time\/",
+      "keywords" : [  ]
+  }
+</script>
+<title>浅谈Golang性能优化</title>
+  <meta property="og:title" content="浅谈Golang性能优化" />
+  <meta property="og:type" content="article" />
+  <meta property="og:description" content="背景 最近在实习公司里负责一个性能比较敏感的服务（延迟P99在10ms），优化了之前出现的一些问题。这个服务之前在晚高峰期间的qps达到45w，接入了几个新功能后涨到50w&#43;，线上是部署了约500个8核8G的实例，因此平均下来每个实例的qps在900~1100之间。
+出现的问题如下：
+  高负载下内存占用率极高，保持在7G左右，这样一抖动很容易OOM，现实是晚高峰期间都会有十几次OOM报警。
+  延迟周期性抖动，用较高qps压测显示每两分钟延迟升高，CPU占用率抖动达到90%以上。在晚高峰下的表现为上游调用失败率（timeout）涨到1%左右。
+  内存占用 对于第一个问题，我仔细阅读了该服务的代码，发现在每次请求的处理中需要多次使用哈希表来处理数据，而且逻辑上这个哈希表无法优化掉。原先的作者是如此构造这个哈希表的：在kv数量小于100的时候使用16个shard的二维slice来模拟，在数量大于100后转而把数据放进map[int]int中。最后使用Golang标准库的sync.Pool来复用这些map。
+这么做粗看没什么问题，实际上问题大了，可能是之前服务的qps不高导致问题没有显现出来。通常我们使用sync.Pool是用于对象复用，也就是避免许多对象的重复内存分配，在对象用完以后把它Put到临时对象池里，尽量延迟它的回收，在下次申请同样的对象时从池子里拿。当然sync.Pool不是传统意义上的对象池，如果一些对象在一段时间内没有被重用，还是会被gc回收的。
+但是在这里，sync.Pool回收的对象是数组和map，在我们放进去的时候自然是需要把数组每一个shard给清空的（这样才能在下一次的时候方便使用），map也是如此。那么此时被回收的对象可以理解为空的map和slice，真正的数据已经失引用了，等待gc回收。
+go的内存回收有GOGC变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。
+于是这里我做的优化是用sync.Pool复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：
+type Node struct { key int val int next *Node } var NodePool *sync.Pool = &amp;amp;sync.Pool { New: func() interface{} { return &amp;amp;Node{} }, } 链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从NodePool中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。
+CPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。
+经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-garbage-collector/：
+  清理终止阶段；
+暂停程序，所有的处理器在这时会进入安全点（Safe point）；
+如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；
+  标记阶段；
+将状态切换至 _GCmark、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；
+恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；
+开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；
+依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；
+使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；
+  标记终止阶段；
+暂停程序、将状态切换至 _GCmarktermination 并关闭辅助标记的用户程序；" />
+  <meta name="description" content="背景 最近在实习公司里负责一个性能比较敏感的服务（延迟P99在10ms），优化了之前出现的一些问题。这个服务之前在晚高峰期间的qps达到45w，接入了几个新功能后涨到50w&#43;，线上是部署了约500个8核8G的实例，因此平均下来每个实例的qps在900~1100之间。
+出现的问题如下：
+  高负载下内存占用率极高，保持在7G左右，这样一抖动很容易OOM，现实是晚高峰期间都会有十几次OOM报警。
+  延迟周期性抖动，用较高qps压测显示每两分钟延迟升高，CPU占用率抖动达到90%以上。在晚高峰下的表现为上游调用失败率（timeout）涨到1%左右。
+  内存占用 对于第一个问题，我仔细阅读了该服务的代码，发现在每次请求的处理中需要多次使用哈希表来处理数据，而且逻辑上这个哈希表无法优化掉。原先的作者是如此构造这个哈希表的：在kv数量小于100的时候使用16个shard的二维slice来模拟，在数量大于100后转而把数据放进map[int]int中。最后使用Golang标准库的sync.Pool来复用这些map。
+这么做粗看没什么问题，实际上问题大了，可能是之前服务的qps不高导致问题没有显现出来。通常我们使用sync.Pool是用于对象复用，也就是避免许多对象的重复内存分配，在对象用完以后把它Put到临时对象池里，尽量延迟它的回收，在下次申请同样的对象时从池子里拿。当然sync.Pool不是传统意义上的对象池，如果一些对象在一段时间内没有被重用，还是会被gc回收的。
+但是在这里，sync.Pool回收的对象是数组和map，在我们放进去的时候自然是需要把数组每一个shard给清空的（这样才能在下一次的时候方便使用），map也是如此。那么此时被回收的对象可以理解为空的map和slice，真正的数据已经失引用了，等待gc回收。
+go的内存回收有GOGC变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。
+于是这里我做的优化是用sync.Pool复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：
+type Node struct { key int val int next *Node } var NodePool *sync.Pool = &amp;amp;sync.Pool { New: func() interface{} { return &amp;amp;Node{} }, } 链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从NodePool中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。
+CPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。
+经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-garbage-collector/：
+  清理终止阶段；
+暂停程序，所有的处理器在这时会进入安全点（Safe point）；
+如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；
+  标记阶段；
+将状态切换至 _GCmark、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；
+恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；
+开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；
+依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；
+使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；
+  标记终止阶段；
+暂停程序、将状态切换至 _GCmarktermination 并关闭辅助标记的用户程序；" />
+  <meta property="og:locale" content="zh-cn" />
+
+  
+    <style>body{font-family:bree serif,sans-serif;-webkit-font-smoothing:antialiased;margin:0 20px}article{max-width:800px;margin-left:auto;margin-right:auto}a{color:#000;text-decoration:none}a:hover{font-weight:600;text-decoration:underline}.post-ads{margin:50px 0}.markdown-body{font-size:18px;max-width:100%}.markdown-body a{text-decoration:underline;text-decoration-color:#000}.markdown-body pre{padding:16px;overflow:auto;border-radius:10px}.markdown-body code{padding:.2em .4em;font-size:85%;background-color:#f6f8fa;border-radius:6px}.markdown-body pre>code{padding:0;font-size:100%;background-color:inherit;border:0}.Chinese .markdown-body{line-height:200%}.site-date-catalog{font-size:2rem}.header-title{font-size:2rem;font-weight:700;margin-top:32px;font-family:bungee shade,sans-serif}.header-title a{text-decoration:none}.header-subtitle{color:#666}.header-items{margin:10px 0}.header-item{margin:0 5px}.header-line{width:100%;border-width:2px;border-color:#482936;border-style:solid none none none}.lang-switch{font-weight:600}#posts-list{min-height:600px}.posts-date,.posts-title{font-size:1.2rem}.posts-line{margin:12px 0}.posts-categories{font-size:.8rem;margin:auto;text-align:center}.posts-category{padding:3px 0;border:#000 2px solid;border-radius:5px;margin-bottom:3px}.site-footer{margin-top:50px}.site-footer-item{margin-right:12px}@media screen and (max-width:600px){.header-title,.header-subtitle,.header-items{text-align:center}.post-content{padding:0 12px}.post-content p{letter-spacing:.05em}}@media screen and (max-width:48em){.posts-category{display:none}}.post-content img{max-width:100%;display:block;margin-left:auto;margin-right:auto;margin-top:12px}.post-header{margin-bottom:50px}.post-title{font-size:2.5rem;font-weight:600}.post-category{display:inline;font-weight:900;padding:2px 5px;border:#000 2px solid;border-radius:5px}.post-date{font-weight:800;font-style:italic}.post-author{float:right;font-weight:600}.page-content{min-height:60%}.post-content{margin-bottom:50px}.post-content p{hyphens:auto;line-height:1.8;text-justify:ideographic;margin-bottom:1em}.related-content{border-width:3px;border-style:solid;border-color:#000;padding:0 10px;margin-bottom:50px;margin-top:100px}.related-content li{margin:5px 0}.taxonomy-term{font-size:3rem}.gallery-img{text-align:center}.gallery-img span{text-align:center}.gallery-img-desc{font-size:.8em;font-weight:800}#disqus_thread{position:relative}#disqus_thread:after{content:"";display:block;height:55px;width:100%;position:absolute;bottom:0;background:#fff}</style>
+  
+  
+    <style>.container,.container-fluid{margin-right:auto;margin-left:auto}.container-fluid{padding-right:2rem;padding-left:2rem}.row{box-sizing:border-box;display:-webkit-box;display:-ms-flexbox;display:flex;-webkit-box-flex:0;-ms-flex:0 1 auto;flex:0 1 auto;-webkit-box-orient:horizontal;-webkit-box-direction:normal;-ms-flex-direction:row;flex-direction:row;-ms-flex-wrap:wrap;flex-wrap:wrap;margin-right:-.5rem;margin-left:-.5rem}.row.reverse{-webkit-box-orient:horizontal;-webkit-box-direction:reverse;-ms-flex-direction:row-reverse;flex-direction:row-reverse}.col.reverse{-webkit-box-orient:vertical;-webkit-box-direction:reverse;-ms-flex-direction:column-reverse;flex-direction:column-reverse}.col-xs,.col-xs-1,.col-xs-10,.col-xs-11,.col-xs-12,.col-xs-2,.col-xs-3,.col-xs-4,.col-xs-5,.col-xs-6,.col-xs-7,.col-xs-8,.col-xs-9,.col-xs-offset-0,.col-xs-offset-1,.col-xs-offset-10,.col-xs-offset-11,.col-xs-offset-12,.col-xs-offset-2,.col-xs-offset-3,.col-xs-offset-4,.col-xs-offset-5,.col-xs-offset-6,.col-xs-offset-7,.col-xs-offset-8,.col-xs-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-xs{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-xs-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-xs-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-xs-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-xs-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-xs-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-xs-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-xs-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-xs-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-xs-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-xs-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-xs-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-xs-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-xs-offset-0{margin-left:0}.col-xs-offset-1{margin-left:8.33333333%}.col-xs-offset-2{margin-left:16.66666667%}.col-xs-offset-3{margin-left:25%}.col-xs-offset-4{margin-left:33.33333333%}.col-xs-offset-5{margin-left:41.66666667%}.col-xs-offset-6{margin-left:50%}.col-xs-offset-7{margin-left:58.33333333%}.col-xs-offset-8{margin-left:66.66666667%}.col-xs-offset-9{margin-left:75%}.col-xs-offset-10{margin-left:83.33333333%}.col-xs-offset-11{margin-left:91.66666667%}.start-xs{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-xs{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-xs{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-xs{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-xs{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-xs{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-xs{-ms-flex-pack:distribute;justify-content:space-around}.between-xs{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-xs{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-xs{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}@media only screen and (min-width:48em){.container{width:49rem}.col-sm,.col-sm-1,.col-sm-10,.col-sm-11,.col-sm-12,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-5,.col-sm-6,.col-sm-7,.col-sm-8,.col-sm-9,.col-sm-offset-0,.col-sm-offset-1,.col-sm-offset-10,.col-sm-offset-11,.col-sm-offset-12,.col-sm-offset-2,.col-sm-offset-3,.col-sm-offset-4,.col-sm-offset-5,.col-sm-offset-6,.col-sm-offset-7,.col-sm-offset-8,.col-sm-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-sm{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-sm-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-sm-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-sm-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-sm-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-sm-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-sm-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-sm-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-sm-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-sm-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-sm-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-sm-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-sm-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-sm-offset-0{margin-left:0}.col-sm-offset-1{margin-left:8.33333333%}.col-sm-offset-2{margin-left:16.66666667%}.col-sm-offset-3{margin-left:25%}.col-sm-offset-4{margin-left:33.33333333%}.col-sm-offset-5{margin-left:41.66666667%}.col-sm-offset-6{margin-left:50%}.col-sm-offset-7{margin-left:58.33333333%}.col-sm-offset-8{margin-left:66.66666667%}.col-sm-offset-9{margin-left:75%}.col-sm-offset-10{margin-left:83.33333333%}.col-sm-offset-11{margin-left:91.66666667%}.start-sm{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-sm{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-sm{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-sm{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-sm{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-sm{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-sm{-ms-flex-pack:distribute;justify-content:space-around}.between-sm{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-sm{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-sm{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:64em){.container{width:65rem}.col-md,.col-md-1,.col-md-10,.col-md-11,.col-md-12,.col-md-2,.col-md-3,.col-md-4,.col-md-5,.col-md-6,.col-md-7,.col-md-8,.col-md-9,.col-md-offset-0,.col-md-offset-1,.col-md-offset-10,.col-md-offset-11,.col-md-offset-12,.col-md-offset-2,.col-md-offset-3,.col-md-offset-4,.col-md-offset-5,.col-md-offset-6,.col-md-offset-7,.col-md-offset-8,.col-md-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-md{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-md-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-md-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-md-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-md-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-md-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-md-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-md-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-md-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-md-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-md-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-md-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-md-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-md-offset-0{margin-left:0}.col-md-offset-1{margin-left:8.33333333%}.col-md-offset-2{margin-left:16.66666667%}.col-md-offset-3{margin-left:25%}.col-md-offset-4{margin-left:33.33333333%}.col-md-offset-5{margin-left:41.66666667%}.col-md-offset-6{margin-left:50%}.col-md-offset-7{margin-left:58.33333333%}.col-md-offset-8{margin-left:66.66666667%}.col-md-offset-9{margin-left:75%}.col-md-offset-10{margin-left:83.33333333%}.col-md-offset-11{margin-left:91.66666667%}.start-md{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-md{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-md{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-md{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-md{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-md{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-md{-ms-flex-pack:distribute;justify-content:space-around}.between-md{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-md{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-md{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:75em){.container{width:76rem}.col-lg,.col-lg-1,.col-lg-10,.col-lg-11,.col-lg-12,.col-lg-2,.col-lg-3,.col-lg-4,.col-lg-5,.col-lg-6,.col-lg-7,.col-lg-8,.col-lg-9,.col-lg-offset-0,.col-lg-offset-1,.col-lg-offset-10,.col-lg-offset-11,.col-lg-offset-12,.col-lg-offset-2,.col-lg-offset-3,.col-lg-offset-4,.col-lg-offset-5,.col-lg-offset-6,.col-lg-offset-7,.col-lg-offset-8,.col-lg-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-lg{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-lg-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-lg-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-lg-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-lg-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-lg-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-lg-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-lg-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-lg-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-lg-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-lg-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-lg-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-lg-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-lg-offset-0{margin-left:0}.col-lg-offset-1{margin-left:8.33333333%}.col-lg-offset-2{margin-left:16.66666667%}.col-lg-offset-3{margin-left:25%}.col-lg-offset-4{margin-left:33.33333333%}.col-lg-offset-5{margin-left:41.66666667%}.col-lg-offset-6{margin-left:50%}.col-lg-offset-7{margin-left:58.33333333%}.col-lg-offset-8{margin-left:66.66666667%}.col-lg-offset-9{margin-left:75%}.col-lg-offset-10{margin-left:83.33333333%}.col-lg-offset-11{margin-left:91.66666667%}.start-lg{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-lg{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-lg{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-lg{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-lg{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-lg{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-lg{-ms-flex-pack:distribute;justify-content:space-around}.between-lg{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-lg{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-lg{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}</style>
+  
+
+  
+
+  <link href="/index.xml" rel="alternate" type="application/rss+xml"
+    title="一只特立独行的猫">
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css?family=Bree+Serif|Bungee+Shade" rel="stylesheet">
+  
+  
+
+  
+  
+</head>
+
+
+<body>
+  <article class="post Chinese" id="article">
+    <div class="row">
+      <div class="col-xs-12">
+        <div class="site-header">
+          
+<header>
+  <div class="header-title">
+    <a href="/"
+      >一只特立独行的猫</a
+    >
+  </div>
+  <div class="header-subtitle"></div>
+</header>
+<div class="row end-md center-xs header-items">
+  
+  <div class="header-item">
+    <a href="https://github.com/ZiJiaW/" target="_blank">GitHub</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="https://www.linkedin.com/in/zijia-wang-865a661a4/" target="_blank">LinkedIn</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="mailto:zijiaw@outlook.com" target="_blank">Email</a>
+  </div>
+  
+</div>
+<div class="row end-xs">
+   
+</div>
+<div class="header-line"></div>
+
+        </div>
+        <header class="post-header">
+          <h1 class="post-title">浅谈Golang性能优化</h1>
+          
+          <div class="row post-desc">
+            <div class="col-xs-6">
+              
+              <time class="post-date" datetime="2021-05-09 00:00:00 UTC">
+                09 May 2021
+              </time>
+              
+            </div>
+            <div class="col-xs-6">
+              
+              <div class="post-author">
+                <a target="_blank" href="https://zijiaw.github.io/">@一只特立独行的猫</a>
+              </div>
+              
+            </div>
+          </div>
+          
+        </header>
+
+        <div class="post-content markdown-body">
+          
+          <h1 id="背景">背景</h1>
+<p>最近在实习公司里负责一个性能比较敏感的服务（延迟P99在10ms），优化了之前出现的一些问题。这个服务之前在晚高峰期间的qps达到45w，接入了几个新功能后涨到50w+，线上是部署了约500个8核8G的实例，因此平均下来每个实例的qps在900~1100之间。</p>
+<p>出现的问题如下：</p>
+<ol>
+<li>
+<p>高负载下内存占用率极高，保持在7G左右，这样一抖动很容易OOM，现实是晚高峰期间都会有十几次OOM报警。</p>
+</li>
+<li>
+<p>延迟周期性抖动，用较高qps压测显示每两分钟延迟升高，CPU占用率抖动达到90%以上。在晚高峰下的表现为上游调用失败率（timeout）涨到1%左右。</p>
+</li>
+</ol>
+<h1 id="内存占用">内存占用</h1>
+<p>对于第一个问题，我仔细阅读了该服务的代码，发现在每次请求的处理中需要多次使用哈希表来处理数据，而且逻辑上这个哈希表无法优化掉。原先的作者是如此构造这个哈希表的：在kv数量小于100的时候使用16个shard的二维slice来模拟，在数量大于100后转而把数据放进<code>map[int]int</code>中。最后使用Golang标准库的<code>sync.Pool</code>来复用这些map。</p>
+<p>这么做粗看没什么问题，实际上问题大了，可能是之前服务的qps不高导致问题没有显现出来。通常我们使用<code>sync.Pool</code>是用于对象复用，也就是避免许多对象的重复内存分配，在对象用完以后把它<code>Put</code>到临时对象池里，尽量延迟它的回收，在下次申请同样的对象时从池子里拿。当然<code>sync.Pool</code>不是传统意义上的对象池，如果一些对象在一段时间内没有被重用，还是会被gc回收的。</p>
+<p>但是在这里，<code>sync.Pool</code>回收的对象是数组和map，在我们放进去的时候自然是需要把数组每一个shard给清空的（这样才能在下一次的时候方便使用），map也是如此。那么此时被回收的对象可以理解为空的map和slice，真正的数据已经失引用了，等待gc回收。</p>
+<p>go的内存回收有<code>GOGC</code>变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。</p>
+<p>于是这里我做的优化是用<code>sync.Pool</code>复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Node</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">key</span> <span style="color:#66d9ef">int</span>
+    <span style="color:#a6e22e">val</span> <span style="color:#66d9ef">int</span>
+    <span style="color:#a6e22e">next</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>
+}
+
+<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">NodePool</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Pool</span> = <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">sync</span>.<span style="color:#a6e22e">Pool</span> {
+    <span style="color:#a6e22e">New</span>: <span style="color:#66d9ef">func</span>() <span style="color:#66d9ef">interface</span>{} {
+        <span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">Node</span>{}
+    },
+}
+</code></pre></div><p>链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从<code>NodePool</code>中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。</p>
+<h1 id="cpu性能">CPU性能</h1>
+<p>实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。</p>
+<p>经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-garbage-collector/：</p>
+<ol>
+<li>
+<p>清理终止阶段；</p>
+<p>暂停程序，所有的处理器在这时会进入安全点（Safe point）；</p>
+<p>如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；</p>
+</li>
+<li>
+<p>标记阶段；</p>
+<p>将状态切换至 _GCmark、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；</p>
+<p>恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；</p>
+<p>开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；</p>
+<p>依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；</p>
+<p>使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；</p>
+</li>
+<li>
+<p>标记终止阶段；</p>
+<p>暂停程序、将状态切换至 _GCmarktermination 并关闭辅助标记的用户程序；</p>
+<p>清理处理器上的线程缓存；</p>
+</li>
+<li>
+<p>清理阶段；</p>
+<p>将状态切换至 _GCoff 开始清理阶段，初始化清理状态并关闭写屏障；</p>
+<p>恢复用户程序，所有新创建的对象会标记成白色；</p>
+<p>后台并发清理所有的内存管理单元，当 Goroutine 申请新的内存管理单元时就会触发清理；</p>
+</li>
+</ol>
+<p>实际上如果你开启gc trace（程序启动时设置GODEBUG=gctrace=1），观察控制台输出的gc耗时，会发现golang暂停程序的时间是极其短的，不超过1ms。其主要耗时在于并发标记阶段需要对所有内存中的对象扫描一遍，确定将要回收的对象。这一过程会在每个逻辑处理器上绑定一个go routine来并发执行，此时CPU使用率会有显著的上升。显然，这一过程的消耗与<strong>对象的总数量</strong>强相关。</p>
+<p>前面提到，我使用<code>sync.Pool</code>来复用了大量的链表结点<code>Node</code>用于构造哈希表，可以想象同一时刻内存中保持了数十万个<code>Node</code>，而<code>sync.Pool</code>仅仅能够规避掉内存反复分配和释放的开销，以及无效对象的堆积产生的内存开销，并不能缓解gc时对内存对象扫描的压力。</p>
+<p>这个问题的解法是实现更加gc友好的对象池，总的来说有两种方法：</p>
+<ol>
+<li>
+<p>通过用cgo调用malloc申请对象的内存，然后以指针来使用，由于malloc申请到的内存不会被gc追踪，自然就无gc开销。</p>
+</li>
+<li>
+<p>服务启动之初直接申请一块大数组，后续对象直接从数组中取用（按下标获取），可以使用一个used数组来记录使用情况（占用时置1，归还时置0）。这样由于大数组是一个整体，扫描时等同于一个对象，也无压力。</p>
+</li>
+</ol>
+<p>在这里我使用的是第二种方法，因为第一种的话还要考虑对象的存放（如果申请的byte数组，然后用unsafe方式使用的话，效果也等同于第二种）。同时第二种也不需要unsafe，更优雅一点。</p>
+<p>此时还有未解决的问题是如何支持高并发度的对象存取，每次取对象需要从一个大数组中选择一个未使用的下标，然后把used置1，每次放回对象的时候需要把对应下标的used置0。因此<code>Node</code>结构需要增加一个域表示其在数组中的偏移（下标）：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Node</span> <span style="color:#66d9ef">struct</span> {
+    <span style="color:#a6e22e">key</span> <span style="color:#66d9ef">int</span>
+    <span style="color:#a6e22e">val</span> <span style="color:#66d9ef">int</span>
+    <span style="color:#a6e22e">idx</span> <span style="color:#66d9ef">int</span>
+    <span style="color:#a6e22e">next</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">Node</span>
+}
+<span style="color:#66d9ef">var</span> <span style="color:#a6e22e">nodes</span> []<span style="color:#a6e22e">Node</span>
+</code></pre></div><p>高并发的情况下如何选择下标呢？可以简单的使用随机数减少冲突，但是这里有一个问题，如果每次申请<code>Node</code>时都计算一个随机数的话，使用pprof查看耗时，计算随机数也会产生很大的overhead，因为申请<code>Node</code>是很频繁的操作。在此我做了一个优化——同一个哈希表仅在第一次申请<code>Node</code>时使用随机偏移，后续使用上一次的<strong>下一位</strong>，以此类推，直到产生冲突。</p>
+<p><img src="/img/slice.png" alt="a"></p>
+<p>如图，map2和map3的Node申请在连续的空间上，而map1使用的连续空间与map2产生冲突，于是才重新生成一个随机的位置。这么做很好地降低了计算随机数的overhead。</p>
+<p>代码非常之简单，仅供参考，Get传入的idx是上一个node的偏移量，我们使用CAS实现轻量级的并发控制：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-go" data-lang="go"><span style="color:#66d9ef">type</span> <span style="color:#a6e22e">NodePool</span> <span style="color:#66d9ef">struct</span> {
+	<span style="color:#a6e22e">nodes</span> []<span style="color:#a6e22e">node</span>
+	<span style="color:#a6e22e">used</span>  []<span style="color:#66d9ef">int32</span>
+	<span style="color:#a6e22e">size</span>  <span style="color:#66d9ef">int</span>
+}
+
+<span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">NodePool</span>) <span style="color:#a6e22e">Put</span>(<span style="color:#a6e22e">n</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">node</span>) {
+	<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">next</span> = <span style="color:#66d9ef">nil</span>
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">idx</span> <span style="color:#f92672">!=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span> {
+		<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">used</span>[<span style="color:#a6e22e">n</span>.<span style="color:#a6e22e">idx</span>] = <span style="color:#ae81ff">0</span>
+	}
+}
+
+<span style="color:#66d9ef">func</span> (<span style="color:#a6e22e">c</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">NodePool</span>) <span style="color:#a6e22e">Get</span>(<span style="color:#a6e22e">key</span> <span style="color:#66d9ef">int</span>, <span style="color:#a6e22e">val</span> <span style="color:#66d9ef">uint16</span>, <span style="color:#a6e22e">idx</span> <span style="color:#66d9ef">int</span>) <span style="color:#f92672">*</span><span style="color:#a6e22e">node</span> {
+    <span style="color:#a6e22e">idx</span><span style="color:#f92672">++</span>
+	<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">idx</span> <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span> {
+		<span style="color:#a6e22e">idx</span> = <span style="color:#a6e22e">frand</span>.<span style="color:#a6e22e">Intn</span>(<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">size</span>)
+	}
+	<span style="color:#66d9ef">for</span> <span style="color:#a6e22e">i</span> <span style="color:#f92672">:=</span> <span style="color:#ae81ff">0</span>; <span style="color:#a6e22e">i</span> &lt; <span style="color:#ae81ff">10</span>; <span style="color:#a6e22e">i</span><span style="color:#f92672">++</span> {
+		<span style="color:#66d9ef">if</span> <span style="color:#a6e22e">atomic</span>.<span style="color:#a6e22e">CompareAndSwapInt32</span>(<span style="color:#f92672">&amp;</span><span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">used</span>[<span style="color:#a6e22e">idx</span>], <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">1</span>) {
+			<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">nodes</span>[<span style="color:#a6e22e">idx</span>].<span style="color:#a6e22e">key</span> = <span style="color:#a6e22e">key</span>
+			<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">nodes</span>[<span style="color:#a6e22e">idx</span>].<span style="color:#a6e22e">val</span> = <span style="color:#a6e22e">val</span>
+			<span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">nodes</span>[<span style="color:#a6e22e">idx</span>]
+		}
+        <span style="color:#a6e22e">idx</span> = <span style="color:#a6e22e">frand</span>.<span style="color:#a6e22e">Intn</span>(<span style="color:#a6e22e">c</span>.<span style="color:#a6e22e">size</span>)
+	}
+	<span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span><span style="color:#a6e22e">node</span>{
+		<span style="color:#a6e22e">key</span>:  <span style="color:#a6e22e">key</span>,
+		<span style="color:#a6e22e">val</span>:  <span style="color:#a6e22e">val</span>,
+		<span style="color:#a6e22e">idx</span>:  <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>,
+		<span style="color:#a6e22e">next</span>: <span style="color:#66d9ef">nil</span>,
+	}
+}
+
+</code></pre></div><p>注意到重试的次数是有限的，当数组占用率很高的时候，我们重新选择位置的次数不超过10次，否则就直接给一个自由的node应急使用，用idx=-1来标记即可。在这个服务里我设置的数组长度为2^21，足够大，因此很少出现重试的情况。</p>
+<p>经过这么优化后，再次对服务进行压测，发现CPU的占用率较之前显著下降，基本看不出gc造成的延时波动（或者说极小），上线观察下来晚高峰下延迟也不再波动了。问题解决！</p>
+<p>一个值得注意的点：如果你使用指针数组<code>[]*node</code>来存储所有的<code>node</code>，是没有效果的，因为此时相当于一个数组引用了数百万个小对象，gc依然需要根据指针进行扫描。</p>
+<h1 id="总结">总结</h1>
+<p>其实都是很小的问题，但是在高并发量高性能要求的场景下，就会暴露出来，对于golang这种带gc的语言，总结下来就是尽量做到对象内存的复用，对于需要大量小对象的场景考虑合并成大对象，控制内存中的对象总量，以缓解gc压力。</p>
+
+        </div>
+
+        <div class="row middle-xs">
+          <div class="col-xs-12">
+            
+            <div class="post-category">
+              <a href="/categories/golang/">
+                Golang
+              </a>
+            </div>
+            
+          </div>
+        </div>
+        
+          <div class="row">
+            <div class="col-xs-12">
+              
+            </div>
+          </div>
+
+          
+
+
+
+          
+          
+          <div style="height: 50px;"></div>
+          
+        
+
+        <div class="site-footer">
+  
+  
+</div>
+
+      </div>
+    </div>
+  </article>
+
+  
+
+<script>
+  
+  
+    
+    
+  
+</script>
+
+  
+
+</body>
+
+</html>

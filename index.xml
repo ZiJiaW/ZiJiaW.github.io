@@ -6,9 +6,40 @@
     <description>Recent content on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sun, 14 Mar 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sun, 09 May 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/index.xml" rel="self" type="application/rss+xml" />
     <item>
-      <title>Reactor模式</title>
+      <title>浅谈Golang性能优化</title>
+      <link>https://zijiaw.github.io/posts/a5-time/</link>
+      <pubDate>Sun, 09 May 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a5-time/</guid>
+      <description>背景 最近在实习公司里负责一个性能比较敏感的服务（延迟P99在10ms），优化了之前出现的一些问题。这个服务之前在晚高峰期间的qps达到45w，接入了几个新功能后涨到50w+，线上是部署了约500个8核8G的实例，因此平均下来每个实例的qps在900~1100之间。
+出现的问题如下：
+  高负载下内存占用率极高，保持在7G左右，这样一抖动很容易OOM，现实是晚高峰期间都会有十几次OOM报警。
+  延迟周期性抖动，用较高qps压测显示每两分钟延迟升高，CPU占用率抖动达到90%以上。在晚高峰下的表现为上游调用失败率（timeout）涨到1%左右。
+  内存占用 对于第一个问题，我仔细阅读了该服务的代码，发现在每次请求的处理中需要多次使用哈希表来处理数据，而且逻辑上这个哈希表无法优化掉。原先的作者是如此构造这个哈希表的：在kv数量小于100的时候使用16个shard的二维slice来模拟，在数量大于100后转而把数据放进map[int]int中。最后使用Golang标准库的sync.Pool来复用这些map。
+这么做粗看没什么问题，实际上问题大了，可能是之前服务的qps不高导致问题没有显现出来。通常我们使用sync.Pool是用于对象复用，也就是避免许多对象的重复内存分配，在对象用完以后把它Put到临时对象池里，尽量延迟它的回收，在下次申请同样的对象时从池子里拿。当然sync.Pool不是传统意义上的对象池，如果一些对象在一段时间内没有被重用，还是会被gc回收的。
+但是在这里，sync.Pool回收的对象是数组和map，在我们放进去的时候自然是需要把数组每一个shard给清空的（这样才能在下一次的时候方便使用），map也是如此。那么此时被回收的对象可以理解为空的map和slice，真正的数据已经失引用了，等待gc回收。
+go的内存回收有GOGC变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。
+于是这里我做的优化是用sync.Pool复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：
+type Node struct { key int val int next *Node } var NodePool *sync.Pool = &amp;amp;sync.Pool { New: func() interface{} { return &amp;amp;Node{} }, } 链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从NodePool中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。
+CPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。
+经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：https://draveness.me/golang/docs/part3-runtime/ch07-memory/golang-garbage-collector/：
+  清理终止阶段；
+暂停程序，所有的处理器在这时会进入安全点（Safe point）；
+如果当前垃圾收集循环是强制触发的，我们还需要处理还未被清理的内存管理单元；
+  标记阶段；
+将状态切换至 _GCmark、开启写屏障、用户程序协助（Mutator Assiste）并将根对象入队；
+恢复执行程序，标记进程和用于协助的用户程序会开始并发标记内存中的对象，写屏障会将被覆盖的指针和新指针都标记成灰色，而所有新创建的对象都会被直接标记成黑色；
+开始扫描根对象，包括所有 Goroutine 的栈、全局对象以及不在堆中的运行时数据结构，扫描 Goroutine 栈期间会暂停当前处理器；
+依次处理灰色队列中的对象，将对象标记成黑色并将它们指向的对象标记成灰色；
+使用分布式的终止算法检查剩余的工作，发现标记阶段完成后进入标记终止阶段；
+  标记终止阶段；
+暂停程序、将状态切换至 _GCmarktermination 并关闭辅助标记的用户程序；</description>
+    </item>
+    
+    <item>
+      <title>Reactor 模式</title>
       <link>https://zijiaw.github.io/posts/a4-reactor/</link>
       <pubDate>Sun, 14 Mar 2021 00:00:00 +0000</pubDate>
       
