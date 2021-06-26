@@ -6,7 +6,28 @@
     <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sun, 09 May 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Fri, 25 Jun 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>KMP与AC自动机</title>
+      <link>https://zijiaw.github.io/posts/a6-kmpac/</link>
+      <pubDate>Fri, 25 Jun 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a6-kmpac/</guid>
+      <description>背景 最近在实习中又遇到了AC自动机，顺便复习了一下KMP算法，两者其实具有很相似的结构，因此写篇文章总结一下。
+KMP算法 问题 KMP算法解决字符串模式匹配问题，给定字符串s和p，计算s中出现p的位置，p即pattern。实际上单就这个问题而言，完全可以采用暴力匹配的方式，假设s的长度为m，p的长度为n，则暴力匹配的时间复杂度为O(mn)，相比之下，KMP算法的时间复杂度为O(m+n)。
+s: abxcabcycabccp: cabcc一些定义 先定义一些东西，方便后面阐释KMP算法背后的思想。
+定义1：
+ 前缀 prefix：字符串a是字符串b的前缀，意味着a是b的子串，且出现在开头。 后缀 suffix：字符串a是字符串b的后缀，意味着a是b的子串，且出现为尾部。  &amp;quot;abc&amp;quot; is prefix of &amp;quot;abcdefg&amp;quot;&amp;quot;efg&amp;quot; is suffix of &amp;quot;abcdefg&amp;quot;在本文中，我们只考虑真子串的情况，虽然按照定义，任意字符串自身也是自身的前缀，但这对于KMP来说没有意义。现在，我们可以定义一个有趣的东西：给定字符串s，如果字符串r既是s的前缀，也是s的后缀，它就是s的公共前后缀。
+如上图，当我们用模式p匹配字符串s时，如果s中多次出现的p存在重叠的情况，那么重叠部分其实就是p的一个公共前后缀。
+然后我们可以发现公共前后缀的两个有趣的性质：
+性质：
+ 如果字符串r1，r2是s的两个不同的公共前后缀，且len(r1)&amp;gt;len(r2)，则r2是r1的公共前后缀。 设s[0:i]的最长公共前后缀为s[0:k]，则s[0:k-1]必然是s[0:i-1]的一个公共前后缀。  这两个性质其实很trivial，读者自己画个图就能理解了，我懒得画图了，通过上面的性质1，我们很容易可以得出下面的结论：
+引理1：
+ 设$r_1,r_2&amp;hellip;$是不同的字符串，$r_{i+1}$是$r_{i}$的最长公共前后缀，且$r_1$是$s$的最长公共前后缀，则$r_1,r_2&amp;hellip;$依次是$s$长度递减的所有的公共前后缀。  next数组 现在我们先不谈KMP算法，先计算一个数组next，它的长度等于字符串p的长度（即pattern的长度），这个数组是这么定义的：
+定义2：
+ next[k]是p[0:k]的最长公共前后缀的长度，也即p[0:k]的最长公共前后缀为p[0:next[k]-1]。特别地，next[0]=0。注意：这里的p[0:k]是闭区间。  vector&amp;lt;int&amp;gt; make_next(const string&amp;amp; p) { vector&amp;lt;int&amp;gt; next(p.size(), 0); int i = 0, j = 1; while (j &amp;lt; p.size()) { while (p[i] != p[j] &amp;amp;&amp;amp; i &amp;gt; 0) {// 根据引理1，按长度递减的顺序尝试所有可能的p[0:i-1]的公共前后缀  i = next[i - 1]; } if (p[i] == p[j]) {// 找到了匹配的p[i]和p[j]，则p[0:j]的最长公共前后缀为p[0:i]  next[j] = ++i; } else { next[j] = 0;// 否则为0  } j++; } return next; } 上面的代码计算next数组。实际上，循环中维护了如下的不变式：</description>
+    </item>
+    
     <item>
       <title>浅谈Golang性能优化</title>
       <link>https://zijiaw.github.io/posts/a5-time/</link>
