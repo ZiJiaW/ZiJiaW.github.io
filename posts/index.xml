@@ -13,7 +13,7 @@
       <pubDate>Fri, 25 Jun 2021 00:00:00 +0000</pubDate>
       
       <guid>https://zijiaw.github.io/posts/a6-kmpac/</guid>
-      <description>背景 最近在实习中又遇到了AC自动机，顺便复习了一下KMP算法，两者其实具有很相似的结构，因此写篇文章总结一下。
+      <description>背景 最近又遇到了AC自动机，顺便复习了一下以前学过的KMP算法，两者其实具有很相似的结构，因此写篇文章总结一下。
 KMP算法 问题 KMP算法解决字符串模式匹配问题，给定字符串s和p，计算s中出现p的位置，p即pattern。实际上单就这个问题而言，完全可以采用暴力匹配的方式，假设s的长度为m，p的长度为n，则暴力匹配的时间复杂度为O(mn)，相比之下，KMP算法的时间复杂度为O(m+n)。
 s: abxcabcycabccp: cabcc一些定义 先定义一些东西，方便后面阐释KMP算法背后的思想。
 定义1：
