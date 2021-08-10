@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="Hugo 0.80.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="一只特立独行的猫" />
+  <meta property="og:url" content="https://zijiaw.github.io/posts/a7-rsfuture/" />
+  <link rel="canonical" href="https://zijiaw.github.io/posts/a7-rsfuture/" /><link rel="alternate" type="application/atom+xml" href="https://zijiaw.github.io/index.xml" title="一只特立独行的猫">
+
+  <script type="application/ld+json">
+  {
+      "@context" : "http://schema.org",
+      "@type" : "BlogPosting",
+      "mainEntityOfPage": {
+           "@type": "WebPage",
+           "@id": "https:\/\/zijiaw.github.io\/"
+      },
+      "articleSection" : "posts",
+      "name" : "Rust中的协程: Future与async\/await",
+      "headline" : "Rust中的协程: Future与async\/await",
+      "description" : "本文内容来自Writing an OS in Rust博客。\n多任务处理 几乎所有操作系统的基本功能都包含多任务处理，即并发执行多个任务的能力（multitasking）。例如，你可能边阅读这篇文章，边打开音乐播放器听歌。即使你只开了浏览器窗口，操作系统肯定也有很多隐藏的进程执行着各种任务（打开任务管理器可以一看究竟）。\n虽然看起来所有的任务都并行执行着，但实际上单个CPU核同一时间只能执行一个任务（它并没有分身术）。为了创造这种并行的假象，操作系统快速地切换着当前CPU正在执行的任务，例如在1s中内切换了100次任务，那么100个任务在1s中内都有所进展，现代CPU通常很快，因此在人的感受下，这100个任务就好像是并行执行的一样。\n对于多核CPU，多任务并行才是确实存在的。例如，一个8核CPU确实可以并行处理8个任务，然而操作系统的处理与单核类似，依然需要不停切换任务。\n通常来说，有两种多任务执行的形式：\n 协作式多任务（cooperative multitasking）：当前任务需要主动放弃CPU资源，然后其他任务才可以切换执行。 抢占式多任务（preemptive multitasking）：操作系统可以在任意时间暂停当前任务，强制切换到其他任务执行。  抢占式多任务 抢占式多任务的关键思想是让操作系统来控制切换任务的时机。操作系统通过响应中断，在中断处理函数中执行任务切换的操作（因为在中断的时候操作系统才会重新获取CPU的控制权）。\n保存状态 因为任务可能在任意的时间点被打断，可能处在某个函数\/算法的中间点，为了在后续恢复它的执行，操作系统必须备份该任务的所有执行状态，包括栈内容，CPU中所有寄存器的值等等。这一过程叫做上下文切换（context switch）。\n由于任务的调用栈信息可能非常庞大，实际上每个任务都具有不同的栈空间（即线程），在切换的时候只需要保存记录对应位置的寄存器（包括program counter，以及栈指针）。这样可以降低上下文切换的开销，因为通常来说1秒内会有约100次上下文切换。\n优缺点 抢占式调度的主要优点是操作系统能够完全控制每个任务的执行时间，这样可以保证每个任务对CPU时间的占用是公平的，而不需要信任任务之间自己的协作。这非常重要，特别是我们会去执行第三方的程序（通常难以信任），也会有多个用户共享同一系统。\n缺点是每个任务需要自己的栈空间。和共享栈空间相比，这会导致一个相对高的内存占用，也会限制同一时刻可以存在的任务数量（例如32位的Linux下每个线程默认分配2MB的栈空间）。另一个缺点是操作系统必须要保存所有寄存器的值，即使当前任务可能只用到了其中的一部分。\n抢占式调度与线程是现代操作系统的基石，它们使得我们能够在操作系统上执行各种各样的不可信任的第三方程序。\n协作式多任务 在协作式多任务下，系统依赖于每个任务自愿放弃CPU的控制，然后才能够执行别的任务。这使得任务能够自己选择更合适的暂停的时机，例如当它需要等待网络IO的时候。\n协作式多任务通常用在语言层面，例如以协程，或者async\/await的形式出现，而不是在操作系统层面。实现的思路是由程序员或者编译器在程序中添加yield操作，从而让当前任务放弃CPU，转而执行其他任务。\n协作式多任务通常与异步编程相结合，在异步操作中，一个耗时未完成的IO操作通常会返回\u0026quot;not ready\u0026quot;状态，而不会阻塞当前任务，此时任务就可以通过yield将CPU让给其他任务，直到IO操作ready。\n保存状态 由于任务自己控制暂停的时机，这样就不依赖于操作系统去保存执行状态了。相对应的，任务可以自行保存其恢复执行需要的信息，这通常带来更好的性能。例如，一个任务刚好结束了一个复杂的算法，那么它可能只需要保存最终的计算结果，而不再需要那些中间值了。\n编程语言实现的协作式任务甚至能够在暂停前备份一部分调用栈。例如，Rust的async\/await实现会保存在一个自动生成的结构体中保存需要的局部变量。通过保存一部分相关的调用栈，所有任务最终可以共享一个调用栈，这就使得内存消耗更节省，从而几乎可以创建任意数量的协作式任务，而不用担心OOM。\n优缺点 缺点非常明显：任务之间的协作依赖于程序员，否则一个恶意的，或者存在bug的任务会一直执行下去，不主动让出CPU，导致其他任务饿死。因此，协作式多任务仅用于我们知晓每个任务的具体内容的时候，相对的，操作系统层面执行的第三方用户程序肯定不能用协作式调度（因为我们根本不知道这些程序的内容）。\n然而，其性能和内存消耗由于抢占式多任务，因此协作式多任务通常用在单个程序中，尤其是与异步操作协同。\nRust中的async\/await Rust语言提供了以async\/await为基础的协作式多任务支持。在我们阐述async\/await如何工作之前，我们首先需要理解Rust中的futures和异步编程。\nFutures 一个future代表着一个可能还未准备好的值。例如一个由另一个任务计算出来的整数，或者一个正在下载中的文件。future的概念可以由下面的小例子阐述。\n这个时序图展示了一个main函数首先从文件系统中读取一个文件，然后调用函数foo。这个过程重复了两次，第一次使用同步调用read_file，另一次是异步调用async_read_file。\n通过同步调用，main函数需要等待文件读取完成，才能够执行foo；而通过异步调用，文件系统直接返回一个future，文件的读取异步地在后台运行，而main函数可以进一步执行foo（此时foo和文件的读取过程是并行的）。\nRust中的future 在Rust中，future的概念由Future这个trait实现，它的定义如下：\npub trait Future { type Output; fn poll(self: Pin\u0026lt;\u0026amp;mut Self\u0026gt;, cx: \u0026amp;mut Context\u0026lt;\u0026#39;_\u0026gt;) -\u0026gt; Poll\u0026lt;Self::Output\u0026gt;; } 关联类型Output表示这个值的类型，例如async_read_file函数返回的future中，Output应当被设置成File。\npoll方法用于检查该future中的值是否ready，它返回一个枚举类型Poll，其定义为：\npub enum Poll\u0026lt;T\u0026gt; { Ready(T), Pending, } 当值已经ready时，它被包在Ready里，否则返回Pending，表示值还在准备中。",
+      "inLanguage" : "en-US",
+      "author" : "一只特立独行的猫",
+      "creator" : "一只特立独行的猫",
+      "publisher": "一只特立独行的猫",
+      "accountablePerson" : "一只特立独行的猫",
+      "copyrightHolder" : "一只特立独行的猫",
+      "copyrightYear" : "2021",
+      "datePublished": "2021-08-09 00:00:00 \u002b0000 UTC",
+      "dateModified" : "2021-08-09 00:00:00 \u002b0000 UTC",
+      "url" : "https:\/\/zijiaw.github.io\/posts\/a7-rsfuture\/",
+      "keywords" : [  ]
+  }
+</script>
+<title>Rust中的协程: Future与async/await</title>
+  <meta property="og:title" content="Rust中的协程: Future与async/await" />
+  <meta property="og:type" content="article" />
+  <meta property="og:description" content="本文内容来自Writing an OS in Rust博客。
+多任务处理 几乎所有操作系统的基本功能都包含多任务处理，即并发执行多个任务的能力（multitasking）。例如，你可能边阅读这篇文章，边打开音乐播放器听歌。即使你只开了浏览器窗口，操作系统肯定也有很多隐藏的进程执行着各种任务（打开任务管理器可以一看究竟）。
+虽然看起来所有的任务都并行执行着，但实际上单个CPU核同一时间只能执行一个任务（它并没有分身术）。为了创造这种并行的假象，操作系统快速地切换着当前CPU正在执行的任务，例如在1s中内切换了100次任务，那么100个任务在1s中内都有所进展，现代CPU通常很快，因此在人的感受下，这100个任务就好像是并行执行的一样。
+对于多核CPU，多任务并行才是确实存在的。例如，一个8核CPU确实可以并行处理8个任务，然而操作系统的处理与单核类似，依然需要不停切换任务。
+通常来说，有两种多任务执行的形式：
+ 协作式多任务（cooperative multitasking）：当前任务需要主动放弃CPU资源，然后其他任务才可以切换执行。 抢占式多任务（preemptive multitasking）：操作系统可以在任意时间暂停当前任务，强制切换到其他任务执行。  抢占式多任务 抢占式多任务的关键思想是让操作系统来控制切换任务的时机。操作系统通过响应中断，在中断处理函数中执行任务切换的操作（因为在中断的时候操作系统才会重新获取CPU的控制权）。
+保存状态 因为任务可能在任意的时间点被打断，可能处在某个函数/算法的中间点，为了在后续恢复它的执行，操作系统必须备份该任务的所有执行状态，包括栈内容，CPU中所有寄存器的值等等。这一过程叫做上下文切换（context switch）。
+由于任务的调用栈信息可能非常庞大，实际上每个任务都具有不同的栈空间（即线程），在切换的时候只需要保存记录对应位置的寄存器（包括program counter，以及栈指针）。这样可以降低上下文切换的开销，因为通常来说1秒内会有约100次上下文切换。
+优缺点 抢占式调度的主要优点是操作系统能够完全控制每个任务的执行时间，这样可以保证每个任务对CPU时间的占用是公平的，而不需要信任任务之间自己的协作。这非常重要，特别是我们会去执行第三方的程序（通常难以信任），也会有多个用户共享同一系统。
+缺点是每个任务需要自己的栈空间。和共享栈空间相比，这会导致一个相对高的内存占用，也会限制同一时刻可以存在的任务数量（例如32位的Linux下每个线程默认分配2MB的栈空间）。另一个缺点是操作系统必须要保存所有寄存器的值，即使当前任务可能只用到了其中的一部分。
+抢占式调度与线程是现代操作系统的基石，它们使得我们能够在操作系统上执行各种各样的不可信任的第三方程序。
+协作式多任务 在协作式多任务下，系统依赖于每个任务自愿放弃CPU的控制，然后才能够执行别的任务。这使得任务能够自己选择更合适的暂停的时机，例如当它需要等待网络IO的时候。
+协作式多任务通常用在语言层面，例如以协程，或者async/await的形式出现，而不是在操作系统层面。实现的思路是由程序员或者编译器在程序中添加yield操作，从而让当前任务放弃CPU，转而执行其他任务。
+协作式多任务通常与异步编程相结合，在异步操作中，一个耗时未完成的IO操作通常会返回&amp;quot;not ready&amp;quot;状态，而不会阻塞当前任务，此时任务就可以通过yield将CPU让给其他任务，直到IO操作ready。
+保存状态 由于任务自己控制暂停的时机，这样就不依赖于操作系统去保存执行状态了。相对应的，任务可以自行保存其恢复执行需要的信息，这通常带来更好的性能。例如，一个任务刚好结束了一个复杂的算法，那么它可能只需要保存最终的计算结果，而不再需要那些中间值了。
+编程语言实现的协作式任务甚至能够在暂停前备份一部分调用栈。例如，Rust的async/await实现会保存在一个自动生成的结构体中保存需要的局部变量。通过保存一部分相关的调用栈，所有任务最终可以共享一个调用栈，这就使得内存消耗更节省，从而几乎可以创建任意数量的协作式任务，而不用担心OOM。
+优缺点 缺点非常明显：任务之间的协作依赖于程序员，否则一个恶意的，或者存在bug的任务会一直执行下去，不主动让出CPU，导致其他任务饿死。因此，协作式多任务仅用于我们知晓每个任务的具体内容的时候，相对的，操作系统层面执行的第三方用户程序肯定不能用协作式调度（因为我们根本不知道这些程序的内容）。
+然而，其性能和内存消耗由于抢占式多任务，因此协作式多任务通常用在单个程序中，尤其是与异步操作协同。
+Rust中的async/await Rust语言提供了以async/await为基础的协作式多任务支持。在我们阐述async/await如何工作之前，我们首先需要理解Rust中的futures和异步编程。
+Futures 一个future代表着一个可能还未准备好的值。例如一个由另一个任务计算出来的整数，或者一个正在下载中的文件。future的概念可以由下面的小例子阐述。
+这个时序图展示了一个main函数首先从文件系统中读取一个文件，然后调用函数foo。这个过程重复了两次，第一次使用同步调用read_file，另一次是异步调用async_read_file。
+通过同步调用，main函数需要等待文件读取完成，才能够执行foo；而通过异步调用，文件系统直接返回一个future，文件的读取异步地在后台运行，而main函数可以进一步执行foo（此时foo和文件的读取过程是并行的）。
+Rust中的future 在Rust中，future的概念由Future这个trait实现，它的定义如下：
+pub trait Future { type Output; fn poll(self: Pin&amp;lt;&amp;amp;mut Self&amp;gt;, cx: &amp;amp;mut Context&amp;lt;&amp;#39;_&amp;gt;) -&amp;gt; Poll&amp;lt;Self::Output&amp;gt;; } 关联类型Output表示这个值的类型，例如async_read_file函数返回的future中，Output应当被设置成File。
+poll方法用于检查该future中的值是否ready，它返回一个枚举类型Poll，其定义为：
+pub enum Poll&amp;lt;T&amp;gt; { Ready(T), Pending, } 当值已经ready时，它被包在Ready里，否则返回Pending，表示值还在准备中。" />
+  <meta name="description" content="本文内容来自Writing an OS in Rust博客。
+多任务处理 几乎所有操作系统的基本功能都包含多任务处理，即并发执行多个任务的能力（multitasking）。例如，你可能边阅读这篇文章，边打开音乐播放器听歌。即使你只开了浏览器窗口，操作系统肯定也有很多隐藏的进程执行着各种任务（打开任务管理器可以一看究竟）。
+虽然看起来所有的任务都并行执行着，但实际上单个CPU核同一时间只能执行一个任务（它并没有分身术）。为了创造这种并行的假象，操作系统快速地切换着当前CPU正在执行的任务，例如在1s中内切换了100次任务，那么100个任务在1s中内都有所进展，现代CPU通常很快，因此在人的感受下，这100个任务就好像是并行执行的一样。
+对于多核CPU，多任务并行才是确实存在的。例如，一个8核CPU确实可以并行处理8个任务，然而操作系统的处理与单核类似，依然需要不停切换任务。
+通常来说，有两种多任务执行的形式：
+ 协作式多任务（cooperative multitasking）：当前任务需要主动放弃CPU资源，然后其他任务才可以切换执行。 抢占式多任务（preemptive multitasking）：操作系统可以在任意时间暂停当前任务，强制切换到其他任务执行。  抢占式多任务 抢占式多任务的关键思想是让操作系统来控制切换任务的时机。操作系统通过响应中断，在中断处理函数中执行任务切换的操作（因为在中断的时候操作系统才会重新获取CPU的控制权）。
+保存状态 因为任务可能在任意的时间点被打断，可能处在某个函数/算法的中间点，为了在后续恢复它的执行，操作系统必须备份该任务的所有执行状态，包括栈内容，CPU中所有寄存器的值等等。这一过程叫做上下文切换（context switch）。
+由于任务的调用栈信息可能非常庞大，实际上每个任务都具有不同的栈空间（即线程），在切换的时候只需要保存记录对应位置的寄存器（包括program counter，以及栈指针）。这样可以降低上下文切换的开销，因为通常来说1秒内会有约100次上下文切换。
+优缺点 抢占式调度的主要优点是操作系统能够完全控制每个任务的执行时间，这样可以保证每个任务对CPU时间的占用是公平的，而不需要信任任务之间自己的协作。这非常重要，特别是我们会去执行第三方的程序（通常难以信任），也会有多个用户共享同一系统。
+缺点是每个任务需要自己的栈空间。和共享栈空间相比，这会导致一个相对高的内存占用，也会限制同一时刻可以存在的任务数量（例如32位的Linux下每个线程默认分配2MB的栈空间）。另一个缺点是操作系统必须要保存所有寄存器的值，即使当前任务可能只用到了其中的一部分。
+抢占式调度与线程是现代操作系统的基石，它们使得我们能够在操作系统上执行各种各样的不可信任的第三方程序。
+协作式多任务 在协作式多任务下，系统依赖于每个任务自愿放弃CPU的控制，然后才能够执行别的任务。这使得任务能够自己选择更合适的暂停的时机，例如当它需要等待网络IO的时候。
+协作式多任务通常用在语言层面，例如以协程，或者async/await的形式出现，而不是在操作系统层面。实现的思路是由程序员或者编译器在程序中添加yield操作，从而让当前任务放弃CPU，转而执行其他任务。
+协作式多任务通常与异步编程相结合，在异步操作中，一个耗时未完成的IO操作通常会返回&amp;quot;not ready&amp;quot;状态，而不会阻塞当前任务，此时任务就可以通过yield将CPU让给其他任务，直到IO操作ready。
+保存状态 由于任务自己控制暂停的时机，这样就不依赖于操作系统去保存执行状态了。相对应的，任务可以自行保存其恢复执行需要的信息，这通常带来更好的性能。例如，一个任务刚好结束了一个复杂的算法，那么它可能只需要保存最终的计算结果，而不再需要那些中间值了。
+编程语言实现的协作式任务甚至能够在暂停前备份一部分调用栈。例如，Rust的async/await实现会保存在一个自动生成的结构体中保存需要的局部变量。通过保存一部分相关的调用栈，所有任务最终可以共享一个调用栈，这就使得内存消耗更节省，从而几乎可以创建任意数量的协作式任务，而不用担心OOM。
+优缺点 缺点非常明显：任务之间的协作依赖于程序员，否则一个恶意的，或者存在bug的任务会一直执行下去，不主动让出CPU，导致其他任务饿死。因此，协作式多任务仅用于我们知晓每个任务的具体内容的时候，相对的，操作系统层面执行的第三方用户程序肯定不能用协作式调度（因为我们根本不知道这些程序的内容）。
+然而，其性能和内存消耗由于抢占式多任务，因此协作式多任务通常用在单个程序中，尤其是与异步操作协同。
+Rust中的async/await Rust语言提供了以async/await为基础的协作式多任务支持。在我们阐述async/await如何工作之前，我们首先需要理解Rust中的futures和异步编程。
+Futures 一个future代表着一个可能还未准备好的值。例如一个由另一个任务计算出来的整数，或者一个正在下载中的文件。future的概念可以由下面的小例子阐述。
+这个时序图展示了一个main函数首先从文件系统中读取一个文件，然后调用函数foo。这个过程重复了两次，第一次使用同步调用read_file，另一次是异步调用async_read_file。
+通过同步调用，main函数需要等待文件读取完成，才能够执行foo；而通过异步调用，文件系统直接返回一个future，文件的读取异步地在后台运行，而main函数可以进一步执行foo（此时foo和文件的读取过程是并行的）。
+Rust中的future 在Rust中，future的概念由Future这个trait实现，它的定义如下：
+pub trait Future { type Output; fn poll(self: Pin&amp;lt;&amp;amp;mut Self&amp;gt;, cx: &amp;amp;mut Context&amp;lt;&amp;#39;_&amp;gt;) -&amp;gt; Poll&amp;lt;Self::Output&amp;gt;; } 关联类型Output表示这个值的类型，例如async_read_file函数返回的future中，Output应当被设置成File。
+poll方法用于检查该future中的值是否ready，它返回一个枚举类型Poll，其定义为：
+pub enum Poll&amp;lt;T&amp;gt; { Ready(T), Pending, } 当值已经ready时，它被包在Ready里，否则返回Pending，表示值还在准备中。" />
+  <meta property="og:locale" content="zh-cn" />
+
+  
+    <style>body{font-family:bree serif,sans-serif;-webkit-font-smoothing:antialiased;margin:0 20px}article{max-width:800px;margin-left:auto;margin-right:auto}a{color:#000;text-decoration:none}a:hover{font-weight:600;text-decoration:underline}.post-ads{margin:50px 0}.markdown-body{font-size:18px;max-width:100%}.markdown-body a{text-decoration:underline;text-decoration-color:#000}.markdown-body pre{padding:16px;overflow:auto;border-radius:10px}.markdown-body code{padding:.2em .4em;font-size:85%;background-color:#f6f8fa;border-radius:6px}.markdown-body pre>code{padding:0;font-size:100%;background-color:inherit;border:0}.Chinese .markdown-body{line-height:200%}.site-date-catalog{font-size:2rem}.header-title{font-size:2rem;font-weight:700;margin-top:32px;font-family:bungee shade,sans-serif}.header-title a{text-decoration:none}.header-subtitle{color:#666}.header-items{margin:10px 0}.header-item{margin:0 5px}.header-line{width:100%;border-width:2px;border-color:#482936;border-style:solid none none none}.lang-switch{font-weight:600}#posts-list{min-height:600px}.posts-date,.posts-title{font-size:1.2rem}.posts-line{margin:12px 0}.posts-categories{font-size:.8rem;margin:auto;text-align:center}.posts-category{padding:3px 0;border:#000 2px solid;border-radius:5px;margin-bottom:3px}.site-footer{margin-top:50px}.site-footer-item{margin-right:12px}@media screen and (max-width:600px){.header-title,.header-subtitle,.header-items{text-align:center}.post-content{padding:0 12px}.post-content p{letter-spacing:.05em}}@media screen and (max-width:48em){.posts-category{display:none}}.post-content img{max-width:100%;display:block;margin-left:auto;margin-right:auto;margin-top:12px}.post-header{margin-bottom:50px}.post-title{font-size:2.5rem;font-weight:600}.post-category{display:inline;font-weight:900;padding:2px 5px;border:#000 2px solid;border-radius:5px}.post-date{font-weight:800;font-style:italic}.post-author{float:right;font-weight:600}.page-content{min-height:60%}.post-content{margin-bottom:50px}.post-content p{hyphens:auto;line-height:1.8;text-justify:ideographic;margin-bottom:1em}.related-content{border-width:3px;border-style:solid;border-color:#000;padding:0 10px;margin-bottom:50px;margin-top:100px}.related-content li{margin:5px 0}.taxonomy-term{font-size:3rem}.gallery-img{text-align:center}.gallery-img span{text-align:center}.gallery-img-desc{font-size:.8em;font-weight:800}#disqus_thread{position:relative}#disqus_thread:after{content:"";display:block;height:55px;width:100%;position:absolute;bottom:0;background:#fff}</style>
+  
+  
+    <style>.container,.container-fluid{margin-right:auto;margin-left:auto}.container-fluid{padding-right:2rem;padding-left:2rem}.row{box-sizing:border-box;display:-webkit-box;display:-ms-flexbox;display:flex;-webkit-box-flex:0;-ms-flex:0 1 auto;flex:0 1 auto;-webkit-box-orient:horizontal;-webkit-box-direction:normal;-ms-flex-direction:row;flex-direction:row;-ms-flex-wrap:wrap;flex-wrap:wrap;margin-right:-.5rem;margin-left:-.5rem}.row.reverse{-webkit-box-orient:horizontal;-webkit-box-direction:reverse;-ms-flex-direction:row-reverse;flex-direction:row-reverse}.col.reverse{-webkit-box-orient:vertical;-webkit-box-direction:reverse;-ms-flex-direction:column-reverse;flex-direction:column-reverse}.col-xs,.col-xs-1,.col-xs-10,.col-xs-11,.col-xs-12,.col-xs-2,.col-xs-3,.col-xs-4,.col-xs-5,.col-xs-6,.col-xs-7,.col-xs-8,.col-xs-9,.col-xs-offset-0,.col-xs-offset-1,.col-xs-offset-10,.col-xs-offset-11,.col-xs-offset-12,.col-xs-offset-2,.col-xs-offset-3,.col-xs-offset-4,.col-xs-offset-5,.col-xs-offset-6,.col-xs-offset-7,.col-xs-offset-8,.col-xs-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-xs{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-xs-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-xs-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-xs-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-xs-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-xs-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-xs-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-xs-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-xs-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-xs-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-xs-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-xs-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-xs-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-xs-offset-0{margin-left:0}.col-xs-offset-1{margin-left:8.33333333%}.col-xs-offset-2{margin-left:16.66666667%}.col-xs-offset-3{margin-left:25%}.col-xs-offset-4{margin-left:33.33333333%}.col-xs-offset-5{margin-left:41.66666667%}.col-xs-offset-6{margin-left:50%}.col-xs-offset-7{margin-left:58.33333333%}.col-xs-offset-8{margin-left:66.66666667%}.col-xs-offset-9{margin-left:75%}.col-xs-offset-10{margin-left:83.33333333%}.col-xs-offset-11{margin-left:91.66666667%}.start-xs{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-xs{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-xs{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-xs{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-xs{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-xs{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-xs{-ms-flex-pack:distribute;justify-content:space-around}.between-xs{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-xs{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-xs{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}@media only screen and (min-width:48em){.container{width:49rem}.col-sm,.col-sm-1,.col-sm-10,.col-sm-11,.col-sm-12,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-5,.col-sm-6,.col-sm-7,.col-sm-8,.col-sm-9,.col-sm-offset-0,.col-sm-offset-1,.col-sm-offset-10,.col-sm-offset-11,.col-sm-offset-12,.col-sm-offset-2,.col-sm-offset-3,.col-sm-offset-4,.col-sm-offset-5,.col-sm-offset-6,.col-sm-offset-7,.col-sm-offset-8,.col-sm-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-sm{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-sm-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-sm-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-sm-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-sm-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-sm-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-sm-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-sm-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-sm-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-sm-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-sm-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-sm-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-sm-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-sm-offset-0{margin-left:0}.col-sm-offset-1{margin-left:8.33333333%}.col-sm-offset-2{margin-left:16.66666667%}.col-sm-offset-3{margin-left:25%}.col-sm-offset-4{margin-left:33.33333333%}.col-sm-offset-5{margin-left:41.66666667%}.col-sm-offset-6{margin-left:50%}.col-sm-offset-7{margin-left:58.33333333%}.col-sm-offset-8{margin-left:66.66666667%}.col-sm-offset-9{margin-left:75%}.col-sm-offset-10{margin-left:83.33333333%}.col-sm-offset-11{margin-left:91.66666667%}.start-sm{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-sm{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-sm{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-sm{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-sm{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-sm{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-sm{-ms-flex-pack:distribute;justify-content:space-around}.between-sm{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-sm{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-sm{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:64em){.container{width:65rem}.col-md,.col-md-1,.col-md-10,.col-md-11,.col-md-12,.col-md-2,.col-md-3,.col-md-4,.col-md-5,.col-md-6,.col-md-7,.col-md-8,.col-md-9,.col-md-offset-0,.col-md-offset-1,.col-md-offset-10,.col-md-offset-11,.col-md-offset-12,.col-md-offset-2,.col-md-offset-3,.col-md-offset-4,.col-md-offset-5,.col-md-offset-6,.col-md-offset-7,.col-md-offset-8,.col-md-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-md{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-md-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-md-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-md-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-md-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-md-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-md-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-md-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-md-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-md-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-md-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-md-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-md-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-md-offset-0{margin-left:0}.col-md-offset-1{margin-left:8.33333333%}.col-md-offset-2{margin-left:16.66666667%}.col-md-offset-3{margin-left:25%}.col-md-offset-4{margin-left:33.33333333%}.col-md-offset-5{margin-left:41.66666667%}.col-md-offset-6{margin-left:50%}.col-md-offset-7{margin-left:58.33333333%}.col-md-offset-8{margin-left:66.66666667%}.col-md-offset-9{margin-left:75%}.col-md-offset-10{margin-left:83.33333333%}.col-md-offset-11{margin-left:91.66666667%}.start-md{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-md{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-md{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-md{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-md{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-md{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-md{-ms-flex-pack:distribute;justify-content:space-around}.between-md{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-md{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-md{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:75em){.container{width:76rem}.col-lg,.col-lg-1,.col-lg-10,.col-lg-11,.col-lg-12,.col-lg-2,.col-lg-3,.col-lg-4,.col-lg-5,.col-lg-6,.col-lg-7,.col-lg-8,.col-lg-9,.col-lg-offset-0,.col-lg-offset-1,.col-lg-offset-10,.col-lg-offset-11,.col-lg-offset-12,.col-lg-offset-2,.col-lg-offset-3,.col-lg-offset-4,.col-lg-offset-5,.col-lg-offset-6,.col-lg-offset-7,.col-lg-offset-8,.col-lg-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-lg{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-lg-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-lg-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-lg-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-lg-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-lg-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-lg-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-lg-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-lg-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-lg-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-lg-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-lg-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-lg-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-lg-offset-0{margin-left:0}.col-lg-offset-1{margin-left:8.33333333%}.col-lg-offset-2{margin-left:16.66666667%}.col-lg-offset-3{margin-left:25%}.col-lg-offset-4{margin-left:33.33333333%}.col-lg-offset-5{margin-left:41.66666667%}.col-lg-offset-6{margin-left:50%}.col-lg-offset-7{margin-left:58.33333333%}.col-lg-offset-8{margin-left:66.66666667%}.col-lg-offset-9{margin-left:75%}.col-lg-offset-10{margin-left:83.33333333%}.col-lg-offset-11{margin-left:91.66666667%}.start-lg{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-lg{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-lg{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-lg{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-lg{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-lg{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-lg{-ms-flex-pack:distribute;justify-content:space-around}.between-lg{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-lg{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-lg{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}</style>
+  
+
+  
+
+  <link href="/index.xml" rel="alternate" type="application/rss+xml"
+    title="一只特立独行的猫">
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css?family=Bree+Serif|Bungee+Shade" rel="stylesheet">
+  
+  
+
+  
+  
+</head>
+
+
+<body>
+  
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/contrib/auto-render.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+      renderMathInElement(document.body, {
+              delimiters: [
+                  {left: "$$", right: "$$", display: true},
+                  {left: "$", right: "$", display: false}
+              ]
+          });
+    });
+</script>
+  <article class="post Chinese" id="article">
+    <div class="row">
+      <div class="col-xs-12">
+        <div class="site-header">
+          
+<header>
+  <div class="header-title">
+    <a href="/"
+      >一只特立独行的猫</a
+    >
+  </div>
+  <div class="header-subtitle"></div>
+</header>
+<div class="row end-md center-xs header-items">
+  
+  <div class="header-item">
+    <a href="https://github.com/ZiJiaW/" target="_blank">GitHub</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="https://www.linkedin.com/in/zijia-wang-865a661a4/" target="_blank">LinkedIn</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="mailto:zijiaw@outlook.com" target="_blank">Email</a>
+  </div>
+  
+</div>
+<div class="row end-xs">
+   
+</div>
+<div class="header-line"></div>
+
+        </div>
+        <header class="post-header">
+          <h1 class="post-title">Rust中的协程: Future与async/await</h1>
+          
+          <div class="row post-desc">
+            <div class="col-xs-6">
+              
+              <time class="post-date" datetime="2021-08-09 00:00:00 UTC">
+                09 Aug 2021
+              </time>
+              
+            </div>
+            <div class="col-xs-6">
+              
+              <div class="post-author">
+                <a target="_blank" href="https://zijiaw.github.io/">@一只特立独行的猫</a>
+              </div>
+              
+            </div>
+          </div>
+          
+        </header>
+
+        <div class="post-content markdown-body">
+          
+          <p>本文内容来自<a href="https://os.phil-opp.com/async-await/#preemptive-multitasking">Writing an OS in Rust</a>博客。</p>
+<h1 id="多任务处理">多任务处理</h1>
+<p>几乎所有操作系统的基本功能都包含多任务处理，即并发执行多个任务的能力（multitasking）。例如，你可能边阅读这篇文章，边打开音乐播放器听歌。即使你只开了浏览器窗口，操作系统肯定也有很多隐藏的进程执行着各种任务（打开任务管理器可以一看究竟）。</p>
+<p>虽然看起来所有的任务都并行执行着，但实际上单个CPU核同一时间只能执行一个任务（它并没有分身术）。为了创造这种并行的假象，操作系统快速地切换着当前CPU正在执行的任务，例如在1s中内切换了100次任务，那么100个任务在1s中内都有所进展，现代CPU通常很快，因此在人的感受下，这100个任务就好像是并行执行的一样。</p>
+<p>对于多核CPU，多任务并行才是确实存在的。例如，一个8核CPU确实可以并行处理8个任务，然而操作系统的处理与单核类似，依然需要不停切换任务。</p>
+<p>通常来说，有两种多任务执行的形式：</p>
+<ul>
+<li>协作式多任务（cooperative multitasking）：当前任务需要主动放弃CPU资源，然后其他任务才可以切换执行。</li>
+<li>抢占式多任务（preemptive multitasking）：操作系统可以在任意时间暂停当前任务，强制切换到其他任务执行。</li>
+</ul>
+<h2 id="抢占式多任务">抢占式多任务</h2>
+<p>抢占式多任务的关键思想是让操作系统来控制切换任务的时机。操作系统通过响应中断，在中断处理函数中执行任务切换的操作（因为在中断的时候操作系统才会重新获取CPU的控制权）。</p>
+<h3 id="保存状态">保存状态</h3>
+<p>因为任务可能在任意的时间点被打断，可能处在某个函数/算法的中间点，为了在后续恢复它的执行，操作系统必须备份该任务的所有执行状态，包括栈内容，CPU中所有寄存器的值等等。这一过程叫做上下文切换（context switch）。</p>
+<p>由于任务的调用栈信息可能非常庞大，实际上每个任务都具有不同的栈空间（即线程），在切换的时候只需要保存记录对应位置的寄存器（包括program counter，以及栈指针）。这样可以降低上下文切换的开销，因为通常来说1秒内会有约100次上下文切换。</p>
+<h3 id="优缺点">优缺点</h3>
+<p>抢占式调度的主要优点是操作系统能够完全控制每个任务的执行时间，这样可以保证每个任务对CPU时间的占用是公平的，而不需要信任任务之间自己的协作。这非常重要，特别是我们会去执行第三方的程序（通常难以信任），也会有多个用户共享同一系统。</p>
+<p>缺点是每个任务需要自己的栈空间。和共享栈空间相比，这会导致一个相对高的内存占用，也会限制同一时刻可以存在的任务数量（例如32位的Linux下每个线程默认分配2MB的栈空间）。另一个缺点是操作系统必须要保存所有寄存器的值，即使当前任务可能只用到了其中的一部分。</p>
+<p>抢占式调度与线程是现代操作系统的基石，它们使得我们能够在操作系统上执行各种各样的不可信任的第三方程序。</p>
+<h2 id="协作式多任务">协作式多任务</h2>
+<p>在协作式多任务下，系统依赖于每个任务自愿放弃CPU的控制，然后才能够执行别的任务。这使得任务能够自己选择更合适的暂停的时机，例如当它需要等待网络IO的时候。</p>
+<p>协作式多任务通常用在语言层面，例如以协程，或者async/await的形式出现，而不是在操作系统层面。实现的思路是由程序员或者编译器在程序中添加yield操作，从而让当前任务放弃CPU，转而执行其他任务。</p>
+<p>协作式多任务通常与异步编程相结合，在异步操作中，一个耗时未完成的IO操作通常会返回&quot;not ready&quot;状态，而不会阻塞当前任务，此时任务就可以通过yield将CPU让给其他任务，直到IO操作ready。</p>
+<h3 id="保存状态-1">保存状态</h3>
+<p>由于任务自己控制暂停的时机，这样就不依赖于操作系统去保存执行状态了。相对应的，任务可以自行保存其恢复执行需要的信息，这通常带来更好的性能。例如，一个任务刚好结束了一个复杂的算法，那么它可能只需要保存最终的计算结果，而不再需要那些中间值了。</p>
+<p>编程语言实现的协作式任务甚至能够在暂停前备份一部分调用栈。例如，Rust的async/await实现会保存在一个自动生成的结构体中保存需要的局部变量。通过保存一部分相关的调用栈，所有任务最终可以共享一个调用栈，这就使得内存消耗更节省，从而几乎可以创建任意数量的协作式任务，而不用担心OOM。</p>
+<h3 id="优缺点-1">优缺点</h3>
+<p>缺点非常明显：任务之间的协作依赖于程序员，否则一个恶意的，或者存在bug的任务会一直执行下去，不主动让出CPU，导致其他任务饿死。因此，协作式多任务仅用于我们知晓每个任务的具体内容的时候，相对的，操作系统层面执行的第三方用户程序肯定不能用协作式调度（因为我们根本不知道这些程序的内容）。</p>
+<p>然而，其性能和内存消耗由于抢占式多任务，因此协作式多任务通常用在单个程序中，尤其是与异步操作协同。</p>
+<h1 id="rust中的asyncawait">Rust中的async/await</h1>
+<p>Rust语言提供了以async/await为基础的协作式多任务支持。在我们阐述async/await如何工作之前，我们首先需要理解Rust中的futures和异步编程。</p>
+<h2 id="futures">Futures</h2>
+<p>一个future代表着一个可能还未准备好的值。例如一个由另一个任务计算出来的整数，或者一个正在下载中的文件。future的概念可以由下面的小例子阐述。</p>
+<p><img src="/img/fig7-1.svg" alt="a"></p>
+<p>这个时序图展示了一个main函数首先从文件系统中读取一个文件，然后调用函数foo。这个过程重复了两次，第一次使用同步调用read_file，另一次是异步调用async_read_file。</p>
+<p>通过同步调用，main函数需要等待文件读取完成，才能够执行foo；而通过异步调用，文件系统直接返回一个future，文件的读取异步地在后台运行，而main函数可以进一步执行foo（此时foo和文件的读取过程是并行的）。</p>
+<h3 id="rust中的future">Rust中的future</h3>
+<p>在Rust中，future的概念由<a href="https://doc.rust-lang.org/nightly/core/future/trait.Future.html">Future</a>这个trait实现，它的定义如下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">trait</span> Future {
+    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span>;
+    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;_</span><span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>Self::Output<span style="color:#f92672">&gt;</span>;
+}
+</code></pre></div><p>关联类型Output表示这个值的类型，例如async_read_file函数返回的future中，Output应当被设置成File。</p>
+<p>poll方法用于检查该future中的值是否ready，它返回一个枚举类型<code>Poll</code>，其定义为：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">pub</span> <span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+    Ready(T),
+    Pending,
+}
+</code></pre></div><p>当值已经ready时，它被包在Ready里，否则返回Pending，表示值还在准备中。</p>
+<p><code>poll</code>方法接收两个参数：<code>self: Pin&lt;&amp;mut Self&gt;</code>和<code>cx: &amp;mut Context&lt;'_&gt;</code>，前者表现为一个普通的<code>&amp;mut Self</code>类型的引用，但是<code>self</code>本身被<code>pin</code>在固定的内存地址上（我们会在后面详细解释pin）。</p>
+<p>变量<code>cx: &amp;mut Context&lt;'_&gt;</code>的作用是传递一个<code>Waker</code>实例给异步任务。<code>Waker</code>用于让异步任务传递“完成”的信号。同样我们会在后面详细解释。</p>
+<h2 id="使用future">使用Future</h2>
+<p>现在我们了解了一些future的基本概念，但是依然不知道怎么用它。因为future表示异步任务的结果，它的值的完成时间是未知的，我们如何有效地获取它的值呢？</p>
+<h3 id="等待future完成">等待future完成</h3>
+<p>一个可能的答案是轮询等待一个future完成，就像下面的代码一样：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">let</span> future <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>);
+<span style="color:#66d9ef">let</span> file_content <span style="color:#f92672">=</span> <span style="color:#66d9ef">loop</span> {
+    <span style="color:#66d9ef">match</span> future.poll(<span style="color:#960050;background-color:#1e0010">…</span>) {
+        Poll::Ready(value) <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">break</span> value,
+        Poll::Pending <span style="color:#f92672">=&gt;</span> {}, <span style="color:#75715e">// do nothing
+</span><span style="color:#75715e"></span>    }
+}
+</code></pre></div><p>上面的代码在一个循环中不停地轮询future（调用poll），直到返回ready。显然这么做是低效的，因为轮询会无意义地占用大量CPU时间。</p>
+<p>一个更高效的办法可能是阻塞当前线程，直到future准备好。这两种都没有意义，因为最终的结果是异步又变成同步了，future的特性被舍弃了。</p>
+<h3 id="future-combinators">Future Combinators</h3>
+<p>future combinator是Rust中提供的一系列方法，如<code>map</code>,<code>fold</code>等，它能够链接不同的future，提供类似迭代器的使用体验。combinator不会等待future，而是经过一定的组合后返回一个新的future。</p>
+<p>下面的例子使用combinator的思路将一个Future&lt;Output = String&gt;类型的future转换为Future&lt;Output = usize&gt;类型，计算了一个异步的string值的长度。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">StringLen</span><span style="color:#f92672">&lt;</span>F<span style="color:#f92672">&gt;</span> {
+    inner_future: <span style="color:#a6e22e">F</span>,
+}
+<span style="color:#66d9ef">impl</span><span style="color:#f92672">&lt;</span>F<span style="color:#f92672">&gt;</span> Future <span style="color:#66d9ef">for</span> StringLen<span style="color:#f92672">&lt;</span>F<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">where</span> F: <span style="color:#a6e22e">Future</span><span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span> {
+    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span> <span style="color:#f92672">=</span> <span style="color:#66d9ef">usize</span>;
+    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(<span style="color:#66d9ef">mut</span> self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context<span style="color:#f92672">&lt;</span><span style="color:#a6e22e">&#39;_</span><span style="color:#f92672">&gt;</span>) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>T<span style="color:#f92672">&gt;</span> {
+        <span style="color:#66d9ef">match</span> self.inner_future.poll(cx) {
+            Poll::Ready(s) <span style="color:#f92672">=&gt;</span> Poll::Ready(s.len()),
+            Poll::Pending <span style="color:#f92672">=&gt;</span> Poll::Pending,
+        }
+    }
+}
+<span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">string_len</span>(string: <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span>)
+    -&gt; <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> <span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span> {
+    StringLen {
+        inner_future: <span style="color:#a6e22e">string</span>,
+    }
+}
+<span style="color:#75715e">// Usage
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">file_len</span>() -&gt; <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> <span style="color:#66d9ef">usize</span><span style="color:#f92672">&gt;</span> {
+    <span style="color:#66d9ef">let</span> file_content_future <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>);
+    string_len(file_content_future)
+}
+</code></pre></div><p>上面的代码并不work，因为没有处理pinning，但是足够阐释future combinator了。它的基本思想就是通过<code>string_len</code>函数将一个future实例封装在另一个结构体<code>StringLen</code>中，而<code>StringLen</code>本身也是一个<code>Future</code>。当我们<code>poll</code>这个<code>StringLen</code>时，实际上就是在<code>poll</code>内部的原始future，然后进行一些额外的操作（例如计算string的长度），再返回。如果内部future没有ready，那么<code>StringLen</code>自然也没有ready。</p>
+<p>FutureExt库实现了一些更泛用的combinator，包括map，then等，可以通过自定义的闭包来生成新的future。</p>
+<p>future+combinator的优点在于，通过特定的结构体+trait来实现了异步操作，编译器可以很方便的进行优化，非常高效；缺点在于这种编程方式在某些情况下很不友好，受限于Rust严苛的类型系统和闭包传递。例如下面的代码：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">example</span>(min_len: <span style="color:#66d9ef">usize</span>) -&gt; <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span> {
+    async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>).then(<span style="color:#66d9ef">move</span> <span style="color:#f92672">|</span>content<span style="color:#f92672">|</span> {
+        <span style="color:#66d9ef">if</span> content.len() <span style="color:#f92672">&lt;</span> min_len {
+            Either::Left(async_read_file(<span style="color:#e6db74">&#34;bar.txt&#34;</span>).map(<span style="color:#f92672">|</span>s<span style="color:#f92672">|</span> content <span style="color:#f92672">+</span> <span style="color:#f92672">&amp;</span>s))
+        } <span style="color:#66d9ef">else</span> {
+            Either::Right(future::ready(content))
+        }
+    })
+}
+</code></pre></div><p>在上面的代码中，我们实现如下的功能：读取foo.txt，如果其内容的长度小于min_len，则把bar.txt文件的内容加在后面再返回，否则直接返回。</p>
+<p>可以看到有很多奇怪的东西，首先是move，因为在闭包里用到了min_len，因此必须把其所有权移入，然后我们通过Either把两个分支内的返回值包装了一下，这是因为Rust规定if-else的不同分支的返回值必须具有相同的类型，而这里map的返回值实际上是一个Map类型的结构体（虽然它实现了Future），而future::ready返回一个直接ready的Future<!-- raw HTML omitted -->，二者严格上不是同一类型。</p>
+<p>这样一段简单的代码就如此复杂，可以想象在更复杂的项目中，特别是变量很多的情况下，需要很谨慎地处理变量的所有权，生命周期，以及类型，带给程序员的心智负担非常的重，代码也会变得很难读。</p>
+<h2 id="asyncawait模式">Async/Await模式</h2>
+<p>async/await的思想是让程序员以类似编写同步代码的方式编写异步代码，由编译器将其转换成异步代码。它基于两个关键字：async和await。async关键字可以用于函数声明，把一个同步函数变成返回Future的异步函数。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">foo</span>() -&gt; <span style="color:#66d9ef">u32</span> {
+    <span style="color:#ae81ff">0</span>
+}
+<span style="color:#75715e">// the above is roughly translated by the compiler to:
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">foo</span>() -&gt; <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> <span style="color:#66d9ef">u32</span><span style="color:#f92672">&gt;</span> {
+    future::ready(<span style="color:#ae81ff">0</span>)
+}
+</code></pre></div><p>在async函数中，可以使用await关键字来获取异步future的值：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">example</span>(min_len: <span style="color:#66d9ef">usize</span>) -&gt; String {
+    <span style="color:#66d9ef">let</span> content <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>).<span style="color:#66d9ef">await</span>;
+    <span style="color:#66d9ef">if</span> content.len() <span style="color:#f92672">&lt;</span> min_len {
+        content <span style="color:#f92672">+</span> <span style="color:#f92672">&amp;</span>async_read_file(<span style="color:#e6db74">&#34;bar.txt&#34;</span>).<span style="color:#66d9ef">await</span>
+    } <span style="color:#66d9ef">else</span> {
+        content
+    }
+}
+</code></pre></div><p>上面的函数是前面使用combinator的example函数的async/await写法，使用await关键字，我们可以很方便的获取future内的值，而不需要写闭包。程序员写起来好像是在写同步的代码，但实际上这些都是异步执行的。</p>
+<h3 id="状态机">状态机</h3>
+<p>那么编译器对async函数做了什么呢？实际上整个async函数被编译成了一个状态机（实际上是在Future的poll中实现状态的转移），每次await调用都代表着一个新状态。我们以上面的example函数为例，它实际上有四个状态：</p>
+<ol>
+<li>start</li>
+<li>waiting on foo.txt</li>
+<li>waiting on bar.txt</li>
+<li>end</li>
+</ol>
+<p>每个状态都代表着函数的一个暂停位置。start和end状态表示函数开始执行的状态，和结束执行的状态。状态2表示当前正在等待操作系统加载文件foo.txt，状态3同理。如下图，编译出来的Future按照如下的状态图进行状态转换：每次poll都会根据当前的状态来尝试获取对应future的值，更新状态。红色的菱形代表着<code>if content.len() &lt; min_len</code>这一分支判断。整个过程中，只有到达end状态后，poll的返回值是Ready，否则其他状态下，一直返回Pending。</p>
+<p><img src="/img/fig7-2.svg" alt="a"></p>
+<h4 id="状态的保存">状态的保存</h4>
+<p>为了能够从上一次poll的状态下恢复任务的执行，状态机必须在内部保存当前的状态，以及必要的局部变量，用于下一次poll。这就是编译器需要做的，Rust的编译器能够自动生成一个结构体，结构体内部保存需要的所有变量。例如，下面的代码近似的给出编译器生成的结构体：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">example</span>(min_len: <span style="color:#66d9ef">usize</span>) -&gt; String {
+    <span style="color:#66d9ef">let</span> content <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>).<span style="color:#66d9ef">await</span>;
+    <span style="color:#66d9ef">if</span> content.len() <span style="color:#f92672">&lt;</span> min_len {
+        content <span style="color:#f92672">+</span> <span style="color:#f92672">&amp;</span>async_read_file(<span style="color:#e6db74">&#34;bar.txt&#34;</span>).<span style="color:#66d9ef">await</span>
+    } <span style="color:#66d9ef">else</span> {
+        content
+    }
+}
+<span style="color:#75715e">// The compiler-generated state structs:
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">StartState</span> {
+    min_len: <span style="color:#66d9ef">usize</span>,
+}
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">WaitingOnFooTxtState</span> {
+    min_len: <span style="color:#66d9ef">usize</span>,
+    foo_txt_future: <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span>,
+}
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">WaitingOnBarTxtState</span> {
+    content: String,
+    bar_txt_future: <span style="color:#a6e22e">impl</span> Future<span style="color:#f92672">&lt;</span>Output <span style="color:#f92672">=</span> String<span style="color:#f92672">&gt;</span>,
+}
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">EndState</span> {}
+</code></pre></div><p>可以看到不同的状态需要保存的变量是不同的，在开始状态下由于任何代码都没有执行，只有<code>min_len</code>这一变量是需要保存的；<code>WaitingOnFooTxtState</code>状态下，多了一个foo文件代表的future；在<code>WaitingOnBarTxtState</code>下，由于<code>min_len</code>已经不再需要了，状态内变量变成了bar的future，以及foo读取出来的content变量。</p>
+<p>现在我们可以用上面这几个状态构建一个状态机了，首先把这些状态包装在enum中：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">enum</span> <span style="color:#a6e22e">ExampleStateMachine</span> {
+    Start(StartState),
+    WaitingOnFooTxt(WaitingOnFooTxtState),
+    WaitingOnBarTxt(WaitingOnBarTxtState),
+    End(EndState),
+}
+</code></pre></div><p>现在我们可以基于这些状态编写poll函数了：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">impl</span> Future <span style="color:#66d9ef">for</span> ExampleStateMachine {
+    <span style="color:#66d9ef">type</span> <span style="color:#a6e22e">Output</span> <span style="color:#f92672">=</span> String; <span style="color:#75715e">// return type of `example`
+</span><span style="color:#75715e"></span>
+    <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>Self::Output<span style="color:#f92672">&gt;</span> {
+        <span style="color:#66d9ef">loop</span> {
+            <span style="color:#66d9ef">match</span> self { <span style="color:#75715e">// TODO: handle pinning
+</span><span style="color:#75715e"></span>                ExampleStateMachine::Start(state) <span style="color:#f92672">=&gt;</span> {<span style="color:#960050;background-color:#1e0010">…</span>}
+                ExampleStateMachine::WaitingOnFooTxt(state) <span style="color:#f92672">=&gt;</span> {<span style="color:#960050;background-color:#1e0010">…</span>}
+                ExampleStateMachine::WaitingOnBarTxt(state) <span style="color:#f92672">=&gt;</span> {<span style="color:#960050;background-color:#1e0010">…</span>}
+                ExampleStateMachine::End(state) <span style="color:#f92672">=&gt;</span> {<span style="color:#960050;background-color:#1e0010">…</span>}
+            }
+        }
+    }
+}
+</code></pre></div><p>我们省略了具体的处理过程，但是上面的函数大致上就是example这个async function被编译出来的样子。注意：我们把match包裹在loop中，这是为了尽可能地推进状态的变化，即，如果其中一个状态的转移是ready的，那我们就优先进行状态转移，再返回，只有无法进行更多的状态转移后，我们才返回Pending。</p>
+<p>现在我们分别实现四个分支下的状态转移功能，首先是Start：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust">ExampleStateMachine::Start(state) <span style="color:#f92672">=&gt;</span> {
+    <span style="color:#66d9ef">let</span> foo_txt_future <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>);
+    <span style="color:#66d9ef">let</span> state <span style="color:#f92672">=</span> WaitingOnFooTxtState {
+        min_len: <span style="color:#a6e22e">state</span>.min_len,
+        foo_txt_future,
+    };
+    <span style="color:#f92672">*</span>self <span style="color:#f92672">=</span> ExampleStateMachine::WaitingOnFooTxt(state);
+}
+</code></pre></div><p>可以看到在Start状态下，状态转移一定会发生，因此在此分支下<code>poll</code>不会返回。</p>
+<p>然后是WaitingOnFooTxt：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust">ExampleStateMachine::WaitingOnFooTxt(state) <span style="color:#f92672">=&gt;</span> {
+    <span style="color:#66d9ef">match</span> state.foo_txt_future.poll(cx) {
+        Poll::Pending <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Poll::Pending,
+        Poll::Ready(content) <span style="color:#f92672">=&gt;</span> {
+            <span style="color:#75715e">// from body of `example`
+</span><span style="color:#75715e"></span>            <span style="color:#66d9ef">if</span> content.len() <span style="color:#f92672">&lt;</span> state.min_len {
+                <span style="color:#66d9ef">let</span> bar_txt_future <span style="color:#f92672">=</span> async_read_file(<span style="color:#e6db74">&#34;bar.txt&#34;</span>);
+                <span style="color:#75715e">// `.await` operation
+</span><span style="color:#75715e"></span>                <span style="color:#66d9ef">let</span> state <span style="color:#f92672">=</span> WaitingOnBarTxtState {
+                    content,
+                    bar_txt_future,
+                };
+                <span style="color:#f92672">*</span>self <span style="color:#f92672">=</span> ExampleStateMachine::WaitingOnBarTxt(state);
+            } <span style="color:#66d9ef">else</span> {
+                <span style="color:#f92672">*</span>self <span style="color:#f92672">=</span> ExampleStateMachine::End(EndState));
+                <span style="color:#66d9ef">return</span> Poll::Ready(content);
+            }
+        }
+    }
+}
+</code></pre></div><p>在此状态下，我们就需要尝试读取foo.txt了，如果未读取完，则返回Pending，否则，将会进入下一段状态转移逻辑，判断文件长度是否满足条件，如果满足条件，则会转移到End状态（此时意味着整个过程结束，直接返回Ready），否则继续读取bar.txt，逻辑类似。</p>
+<p>之后是WaitingOnBarTxt：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust">ExampleStateMachine::WaitingOnBarTxt(state) <span style="color:#f92672">=&gt;</span> {
+    <span style="color:#66d9ef">match</span> state.bar_txt_future.poll(cx) {
+        Poll::Pending <span style="color:#f92672">=&gt;</span> <span style="color:#66d9ef">return</span> Poll::Pending,
+        Poll::Ready(bar_txt) <span style="color:#f92672">=&gt;</span> {
+            <span style="color:#f92672">*</span>self <span style="color:#f92672">=</span> ExampleStateMachine::End(EndState));
+            <span style="color:#75715e">// from body of `example`
+</span><span style="color:#75715e"></span>            <span style="color:#66d9ef">return</span> Poll::Ready(state.content <span style="color:#f92672">+</span> <span style="color:#f92672">&amp;</span>bar_txt);
+        }
+    }
+}
+</code></pre></div><p>同样非常简单，如果读取完成，则Ready，否则Pending；至此，你会发现End状态下poll不需要做什么，实际上Rust规定了返回了Ready后的Future不可以再poll了，因此End下的poll直接panic即可：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust">ExampleStateMachine::End(_) <span style="color:#f92672">=&gt;</span> {
+    panic<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;poll called after Poll::Ready was returned&#34;</span>);
+}
+</code></pre></div><p>好了，上面仅仅是简单的解释，实际上Rust的实现远比这个复杂，是基于<a href="https://doc.rust-lang.org/nightly/unstable-book/language-features/generators.html">generator</a>来实现的状态机。最后，原先的async函数example变成了如下的一个普通函数，它返回一个状态机兼Future类型的变量。：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">example</span>(min_len: <span style="color:#66d9ef">usize</span>) -&gt; <span style="color:#a6e22e">ExampleStateMachine</span> {
+    ExampleStateMachine::Start(StartState {
+        min_len,
+    })
+}
+</code></pre></div><h2 id="pinning">Pinning</h2>
+<p>我们已经好几次遇到pin这个类型了，现在我们来看看它的来龙去脉。</p>
+<h3 id="自引用结构体">自引用结构体</h3>
+<p>如前所述，状态机把每一个状态的局部变量存放在struct中，对于example函数这样的很小的函数，没什么问题，但是当函数变得复杂，比如变量开始互相引用的时候，问题就出现了，例如下面这段代码：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">pin_example</span>() -&gt; <span style="color:#66d9ef">i32</span> {
+    <span style="color:#66d9ef">let</span> array <span style="color:#f92672">=</span> [<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">3</span>];
+    <span style="color:#66d9ef">let</span> element <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>array[<span style="color:#ae81ff">2</span>];
+    async_write_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>, element.to_string()).<span style="color:#66d9ef">await</span>;
+    <span style="color:#f92672">*</span>element
+}
+</code></pre></div><p>上面这个函数的功能非常简单，把3写道文件foo.txt中，然后返回3；里面只有一个await，因此状态机存在3个状态，我们只关注中间的等待写文件的状态：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">WaitingOnWriteState</span> {
+    array: [<span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">3</span>],
+    element: <span style="color:#ae81ff">0x1001c</span>, <span style="color:#75715e">// address of the last array element
+</span><span style="color:#75715e"></span>}
+</code></pre></div><p>可以看到，我们需要同时保存array和element，因为element用于返回值，而array被element引用。element是一个引用，其存储一个指针，指向0x1001c这个地址。这样一个结构体称为<strong>自引用结构体</strong>：因为它的某个成员引用了自身的另一个成员。</p>
+<h3 id="问题所在">问题所在</h3>
+<p>结构体内部的指针导致了一个非常重要的问题，我们看它的内存布局：</p>
+<p><img src="/img/fig7-3.svg" alt="a"></p>
+<p>目前为止都没问题，很正常，但是当我们把这个结构体移动到别的地方，问题就出来了：</p>
+<p><img src="/img/fig7-4.svg" alt="a"></p>
+<p>现在，你会发现array的位置不再是原先的，而element内部的指针确没有改变！这导致引用失效了。然而，struct的地址变化是很常见的，比如我们会把它作为参数传入另一个函数，这样它被copy到另外的函数运行栈上，地址就变化了。</p>
+<h3 id="可能的解法">可能的解法</h3>
+<p>一般来说，有三种办法解决这一指针悬空的问题：</p>
+<ol>
+<li>移动时更新指针：每次移动时都主动修改指针的值。这种做法需要对编译器进行巨大的修改，而且由于指针的值是运行时动态可变的，这一操作无法在编译时确定，需要runtime动态判断引用是否是自引用，这非常损耗性能，不可取。</li>
+<li>指针存储结构体内部的偏移，而不是绝对的内存地址：例如上面的example例，可以让element存储8，而不是那串地址，8代表着从结构体内存位置开始向后偏移8字节。这样的话内存移动后指针的值依然具有意义。然而，同样的，这依然需要在运行时动态判断当前的指针是否自引用，只有在自引用的时候才可以按照这一规则去存储，缺陷同1。</li>
+<li>禁止移动结构体：我们直接解决导致这一问题的罪魁祸首，不让该结构体移动。这一做法的好处是完全没有性能损耗，这一规则完全通过Rust的类型系统在编译期就可以保证。缺点是需要程序员来注意“禁止move”这一限制。</li>
+</ol>
+<p>众所周知，Rust的设计哲学就是保证零开销抽象，因此自然Rust选择了第三种方案，并提出了<a href="https://doc.rust-lang.org/stable/core/pin/index.html">Pinning API</a>，该API在<a href="https://github.com/rust-lang/rfcs/blob/master/text/2349-pin.md">RFC 2349</a>中被提出。下面我们简单看一下这个API，并解释它是如何与async/await一起工作的。</p>
+<h3 id="使用堆上内存">使用堆上内存</h3>
+<p>堆上分配的对象具有固定的内存地址，因此我们可以用Box引用堆上的结构体，结构体内部的指针指向堆上的内存地址，这样的话由于不管怎么移动，Box指针指向的永远是堆上的对象，自然就无所谓移动与否了。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> heap_value <span style="color:#f92672">=</span> Box::new(SelfReferential {
+        self_ptr: <span style="color:#ae81ff">0</span> <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> _,
+    });
+    <span style="color:#66d9ef">let</span> ptr <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;*</span>heap_value <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> SelfReferential;
+    heap_value.self_ptr <span style="color:#f92672">=</span> ptr;
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;heap value at: {:p}&#34;</span>, heap_value);
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;internal reference: {:p}&#34;</span>, heap_value.self_ptr);
+}
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SelfReferential</span> {
+    self_ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Self,
+}
+</code></pre></div><p>上面的代码就是一个例子，我们首先定义一个自引用的结构体<code>SelfReferential</code>，在<code>main</code>函数中，首先定义一个存储空指针的结构体，以<code>Box</code>引用之，而后获取该<code>Box</code>指向的对象的地址，将其赋值给<code>self_ptr</code>，现在<code>heap_value</code>不论怎么被复制、移动，都不会改变内部指针的有效性（因为整个对象在堆上）。</p>
+<p>这个做法看起来无懈可击，但是依然可以通过一些特殊手段使其无效化，比如下面的代码：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">let</span> stack_value <span style="color:#f92672">=</span> mem::replace(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span>heap_value, SelfReferential {
+    self_ptr: <span style="color:#ae81ff">0</span> <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> _,
+});
+println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;value at: {:p}&#34;</span>, <span style="color:#f92672">&amp;</span>stack_value);
+println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;internal reference: {:p}&#34;</span>, stack_value.self_ptr);
+</code></pre></div><p>通过调用<code>mem::replace</code>可以将一个堆上的对象转变为栈上对象，原先位置的对象会被替换为第二个参数，整体copy到了栈上变量<code>stack_value</code>中，然而此时<code>stack_value</code>中的<code>self_ptr</code>仍然指向原先的地址，这就产生错误了。因此，单纯使用堆上内存分配对象不能完全解决这一问题。</p>
+<p>其实这个问题的本质原因就是使用<code>Box</code>智能指针允许我们获得内部对象的<code>&amp;mut</code>引用，从而我们可以修改内部对象，调用<code>mem::replace</code>或者<code>mem::swap</code>这类的函数。因此最简单的想法就是禁止获取自引用对象的<code>&amp;mut</code>引用。</p>
+<h3 id="pinboxt和unpin"><code>Pin&lt;Box&lt;T&gt;&gt;</code>和<code>Unpin</code></h3>
+<p>Pinning API提供的<code>Pin</code>类型和<code>Unpin</code>trait解决了<code>&amp;mut</code>引用的问题。<code>Unpin</code>这一trait是自动为所有类型生成的，除非显式豁免。对于Pin类型，Rust保证无法以safe的方式获取内部对象的<code>&amp;mut</code>引用。例如下面的代码可以使<code>SelfReferential</code>类型不再是<code>Unpin</code>的：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">use</span> core::marker::PhantomPinned;
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SelfReferential</span> {
+    self_ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Self,
+    _pin: <span style="color:#a6e22e">PhantomPinned</span>,
+}
+</code></pre></div><p>具体做法是在内部添加一个未实现<code>Unpin</code>的标记类型PhantomPinned变量（这是个0-size类型），那么根据自动trait生成规则，<code>SelfReferential</code>也就不会是<code>Unpin</code>的。这还没完，为了防止获取它的可变引用，我们还需要用<code>Pin</code>包装一下：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> heap_value <span style="color:#f92672">=</span> Box::pin(SelfReferential {
+    self_ptr: <span style="color:#ae81ff">0</span> <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> _,
+    _pin: <span style="color:#a6e22e">PhantomPinned</span>,
+});
+</code></pre></div><p>现在我们尝试运行一下修改版的example：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">use</span> std::mem;
+<span style="color:#66d9ef">use</span> std::marker::PhantomPinned;
+
+<span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">main</span>() {
+    <span style="color:#66d9ef">let</span> <span style="color:#66d9ef">mut</span> heap_value <span style="color:#f92672">=</span> Box::pin(SelfReferential {
+        self_ptr: <span style="color:#ae81ff">0</span> <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> _,
+        _pin: <span style="color:#a6e22e">PhantomPinned</span>,
+    });
+    <span style="color:#66d9ef">let</span> ptr <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;*</span>heap_value <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> SelfReferential;
+    heap_value.self_ptr <span style="color:#f92672">=</span> ptr;
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;heap value at: {:p}&#34;</span>, heap_value);
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;internal reference: {:p}&#34;</span>, heap_value.self_ptr);
+    
+    <span style="color:#75715e">// break it
+</span><span style="color:#75715e"></span>    
+    <span style="color:#66d9ef">let</span> stack_value <span style="color:#f92672">=</span> mem::replace(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> <span style="color:#f92672">*</span>heap_value, SelfReferential {
+        self_ptr: <span style="color:#ae81ff">0</span> <span style="color:#66d9ef">as</span> <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> _,
+        _pin: <span style="color:#a6e22e">PhantomPinned</span>,
+    });
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;value at: {:p}&#34;</span>, <span style="color:#f92672">&amp;</span>stack_value);
+    println<span style="color:#f92672">!</span>(<span style="color:#e6db74">&#34;internal reference: {:p}&#34;</span>, stack_value.self_ptr);
+}
+<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">SelfReferential</span> {
+    self_ptr: <span style="color:#f92672">*</span><span style="color:#66d9ef">const</span> Self,
+    _pin: <span style="color:#a6e22e">PhantomPinned</span>,
+}
+</code></pre></div><p>但是会编译失败，报错如下：</p>
+<pre><code>error[E0594]: cannot assign to data in a dereference of `std::pin::Pin&lt;std::boxed::Box&lt;SelfReferential&gt;&gt;`
+  --&gt; src/main.rs:10:5
+   |
+10 |     heap_value.self_ptr = ptr;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ cannot assign
+   |
+   = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `std::pin::Pin&lt;std::boxed::Box&lt;SelfReferential&gt;&gt;`
+
+error[E0596]: cannot borrow data in a dereference of `std::pin::Pin&lt;std::boxed::Box&lt;SelfReferential&gt;&gt;` as mutable
+  --&gt; src/main.rs:16:36
+   |
+16 |     let stack_value = mem::replace(&amp;mut *heap_value, SelfReferential {
+   |                                    ^^^^^^^^^^^^^^^^ cannot borrow as mutable
+   |
+   = help: trait `DerefMut` is required to modify through a dereference, but it is not implemented for `std::pin::Pin&lt;std::boxed::Box&lt;SelfReferential&gt;&gt;`
+</code></pre><p>这两个错误都是因为目前的这个类型<code>Pin&lt;Box&lt;SelfReferential&gt;&gt;</code>没有实现<code>DerefMut</code>这一trait，无法获取其可变引用，即<code>&amp;mut</code>，这恰恰是我们需要的。</p>
+<p>但是很显然，在第十行我们只是修改了变量的一个成员，这并不会移动对象的地址，我们想要只拒绝16行调用，但是编译器无法区分二者，它只能简单的禁止一切获取<code>&amp;mut</code>的操作。</p>
+<p>我们可以通过使用unsafe方法<code>get_unchecked_mut</code>来规避这一问题：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#75715e">// safe because modifying a field doesn&#39;t move the whole struct
+</span><span style="color:#75715e"></span><span style="color:#66d9ef">unsafe</span> {
+    <span style="color:#66d9ef">let</span> mut_ref <span style="color:#f92672">=</span> Pin::as_mut(<span style="color:#f92672">&amp;</span><span style="color:#66d9ef">mut</span> heap_value);
+    Pin::get_unchecked_mut(mut_ref).self_ptr <span style="color:#f92672">=</span> ptr;
+}
+</code></pre></div><p>我们首先使用<code>Pin::as_mut</code>从<code>Pin&lt;Box&lt;T&gt;&gt;</code>中获取<code>Pin&lt;&amp;mut T&gt;</code>，而后通过<code>Pin::get_unchecked_mut</code>获取内部的可变引用。这样，初始化问题就解决了，编译器只会拒绝第16行的调用。</p>
+<h3 id="stack-pinning和pinmut-t">Stack Pinning和<code>Pin&lt;&amp;mut T&gt;</code></h3>
+<p>上一节我们介绍了如何通过<code>Pin</code>来构建安全的堆上自引用结构体，但是堆上分配的对象总是有一定性能损耗，慢于栈上分配。Rust还提供了<code>Pin&lt;&amp;mut T&gt;</code>来指向栈上自引用结构体。</p>
+<p>不像<code>Pin&lt;Box&lt;T&gt;&gt;</code>实例完全拥有变量的所有权，<code>Pin&lt;&amp;mut T&gt;</code>只是暂时借用了变量T，这导致程序员编写的时候要格外小心，我不建议Pin栈上变量。进一步阅读可以看<a href="https://doc.rust-lang.org/nightly/core/pin/index.html">pin module</a>和<a href="https://doc.rust-lang.org/nightly/core/pin/struct.Pin.html#method.new_unchecked">Pin::new_checked</a>方法。</p>
+<h3 id="pinning和future">Pinning和Future</h3>
+<p>我们之前看到<code>Future::poll</code>方法接收的第一个参数以<code>Pin&lt;&amp;mut Self&gt;</code>形式给出：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">poll</span>(self: <span style="color:#a6e22e">Pin</span><span style="color:#f92672">&lt;&amp;</span><span style="color:#66d9ef">mut</span> Self<span style="color:#f92672">&gt;</span>, cx: <span style="color:#66d9ef">&amp;</span><span style="color:#a6e22e">mut</span> Context) -&gt; <span style="color:#a6e22e">Poll</span><span style="color:#f92672">&lt;</span>Self::Output<span style="color:#f92672">&gt;</span>
+</code></pre></div><p>这种方法采用<code>self:Pin&lt;&amp;mut Self&gt;</code>而不是普通的<code>&amp;mut self</code>的原因是，从async/await创建的Future实例通常是自引用的。通过将<code>Self</code>包装到<code>Pin</code>并让编译器为从async/await生成的自引用<code>Future</code>豁免<code>Unpin</code>，可以保证<code>Future</code>在<code>poll</code>之间不会在内存中移动，这确保所有内部引用仍然有效。</p>
+<p>值得注意的是，在第一次<code>poll</code>之前move <code>future</code>是可以的。因为<code>future</code>是懒惰的，在第一次<code>poll</code>之前什么都不做。因此，生成的状态机的起始状态仅包含函数参数，但不包含内部引用。为了调用 <code>poll</code>，调用者必须先将 <code>future</code> 包装到 <code>Pin</code> 中，以确保 <code>future</code> 不能再在内存中移动。由于栈Pinning更难正确处理，因此我建议始终将 <code>Box::pin</code> 与 <code>Pin::as_mut</code> 结合使用。</p>
+<p>至于如何在<code>poll</code>函数内调用<code>self</code>的<code>poll</code>方法，建议阅读源码，如<a href="https://docs.rs/futures-util/0.3.4/src/futures_util/future/future/map.rs.html"><code>map</code>的实现</a>，以及<a href="https://doc.rust-lang.org/stable/std/pin/index.html#projections-and-structural-pinning">pin文档</a>。</p>
+<h2 id="executors和wakers">Executors和Wakers</h2>
+<p>现在我们了解了Future的来龙去脉，但是有一个问题还没有解决：Future本身是惰性求值的，只有当我们去<code>poll</code>它的时候，状态才会演进，否则一切都是停滞不前的。</p>
+<p>如果只有一个future还好，我们只需要在上面循环poll就行，但是一个应用通常会有很多future并发执行，此时就需要一个全局的executor负责执行所有的future，直到全部ready。</p>
+<h3 id="executor">Executor</h3>
+<p>一个执行器的作用就是能够把不同的future作为一个个任务分配执行，通过某种<code>spawn</code>方法。而后executor就可以不停地执行不同的任务，在Pending时切换，实现协作式的多任务处理，达到并发执行的效果。</p>
+<p>许多executor的实现也充分利用了多核性能。它们创建一个线程池来更高效地利用CPU，利用工作窃取（<a href="https://en.wikipedia.org/wiki/Work_stealing">work stealing</a>）算法来作负载均衡。也有一些特殊的executor实现专门为嵌入式系统作了优化，降低了延迟和内存占用。</p>
+<p>同时为了避免无意义的轮询一个Pending的Future，这些执行器还利用Rust提供的<code>Waker</code>API进行优化。</p>
+<h3 id="waker">Waker</h3>
+<p>Waker的想法是通过透传一个<code>Waker</code>类型的变量（包在<code>Context</code>中），任务本身会在完成后通过<code>Waker</code>通知executor，这样executor只需要在被通知后再去poll这个future，而不需要不停地poll一个Pending中的future。</p>
+<p>例如下面的代码：</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-rust" data-lang="rust"><span style="color:#66d9ef">async</span> <span style="color:#66d9ef">fn</span> <span style="color:#a6e22e">write_file</span>() {
+    async_write_file(<span style="color:#e6db74">&#34;foo.txt&#34;</span>, <span style="color:#e6db74">&#34;Hello&#34;</span>).<span style="color:#66d9ef">await</span>;
+}
+</code></pre></div><p>这个函数异步地把&quot;Hello&quot;写入文件foo.txt中，由于写入硬盘比较耗时，第一次对这个future的<code>poll</code>调用可能会返回<code>Pending</code>。然而，文件系统API内部会保存通过<code>poll</code>传入的<code>Waker</code>实例，在写入完成后通知executor写入完成，从而避免无意义的<code>poll</code>。</p>
+<h1 id="总结">总结</h1>
+<p>在这篇文章的开头，我们讨论了抢占式和协作式多任务处理。抢占式多任务依赖操作系统在运行中对任务进行强制切换，而协作多任务则要求任务定期通过yield操作主动放弃对CPU的控制。协作方法的一大优点是任务可以自己保存它们的状态，这使得上下文切换更搞笑，并使任务之间共享相同的调用栈成为可能。</p>
+<p>现在我们可以说，future和async/await就是协作式多任务（或者说协程机制）的一种实现：</p>
+<ul>
+<li>每个提交给executor的future基本上就是一个协作式的任务。</li>
+<li>在future机制下没有显式的yield操作，但是future返回Pending/Ready本身就是一种对CPU控制权的让出。
+<ul>
+<li>如果future本身不想让出CPU，它只要不在poll中返回即可。</li>
+<li>每个future都可能完全占有CPU，让其他future饿死，因此我们必须信任future。</li>
+</ul>
+</li>
+<li>Futures内部存储了它们在下一次poll调用时继续执行所需的所有状态。使用async/await，编译器会自动检测所有需要的变量并将它们存储在生成的状态机中。
+<ul>
+<li>Rust只保存最小的必要的状态值。</li>
+<li>所有future的执行都共用一个栈，不存在任务独有的栈空间。</li>
+</ul>
+</li>
+</ul>
+<p>我们看到futures和async/await的特性基本上符合协作式多任务处理模式，它们只是使用了一些不同的术语。</p>
+
+        </div>
+
+        <div class="row middle-xs">
+          <div class="col-xs-12">
+            
+            <div class="post-category">
+              <a href="/categories/programming/">
+                programming
+              </a>
+            </div>
+            
+            <div class="post-category">
+              <a href="/categories/rust/">
+                Rust
+              </a>
+            </div>
+            
+          </div>
+        </div>
+        
+          <div class="row">
+            <div class="col-xs-12">
+              
+            </div>
+          </div>
+
+          
+
+
+
+          
+          
+          <div style="height: 50px;"></div>
+          
+        
+
+        <div class="site-footer">
+  
+  
+</div>
+
+      </div>
+    </div>
+  </article>
+
+  
+
+<script>
+  
+  
+    
+    
+  
+</script>
+
+  
+
+</body>
+
+</html>

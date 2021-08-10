@@ -6,7 +6,41 @@
     <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Fri, 25 Jun 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 09 Aug 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Rust中的协程: Future与async/await</title>
+      <link>https://zijiaw.github.io/posts/a7-rsfuture/</link>
+      <pubDate>Mon, 09 Aug 2021 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a7-rsfuture/</guid>
+      <description>本文内容来自Writing an OS in Rust博客。
+多任务处理 几乎所有操作系统的基本功能都包含多任务处理，即并发执行多个任务的能力（multitasking）。例如，你可能边阅读这篇文章，边打开音乐播放器听歌。即使你只开了浏览器窗口，操作系统肯定也有很多隐藏的进程执行着各种任务（打开任务管理器可以一看究竟）。
+虽然看起来所有的任务都并行执行着，但实际上单个CPU核同一时间只能执行一个任务（它并没有分身术）。为了创造这种并行的假象，操作系统快速地切换着当前CPU正在执行的任务，例如在1s中内切换了100次任务，那么100个任务在1s中内都有所进展，现代CPU通常很快，因此在人的感受下，这100个任务就好像是并行执行的一样。
+对于多核CPU，多任务并行才是确实存在的。例如，一个8核CPU确实可以并行处理8个任务，然而操作系统的处理与单核类似，依然需要不停切换任务。
+通常来说，有两种多任务执行的形式：
+ 协作式多任务（cooperative multitasking）：当前任务需要主动放弃CPU资源，然后其他任务才可以切换执行。 抢占式多任务（preemptive multitasking）：操作系统可以在任意时间暂停当前任务，强制切换到其他任务执行。  抢占式多任务 抢占式多任务的关键思想是让操作系统来控制切换任务的时机。操作系统通过响应中断，在中断处理函数中执行任务切换的操作（因为在中断的时候操作系统才会重新获取CPU的控制权）。
+保存状态 因为任务可能在任意的时间点被打断，可能处在某个函数/算法的中间点，为了在后续恢复它的执行，操作系统必须备份该任务的所有执行状态，包括栈内容，CPU中所有寄存器的值等等。这一过程叫做上下文切换（context switch）。
+由于任务的调用栈信息可能非常庞大，实际上每个任务都具有不同的栈空间（即线程），在切换的时候只需要保存记录对应位置的寄存器（包括program counter，以及栈指针）。这样可以降低上下文切换的开销，因为通常来说1秒内会有约100次上下文切换。
+优缺点 抢占式调度的主要优点是操作系统能够完全控制每个任务的执行时间，这样可以保证每个任务对CPU时间的占用是公平的，而不需要信任任务之间自己的协作。这非常重要，特别是我们会去执行第三方的程序（通常难以信任），也会有多个用户共享同一系统。
+缺点是每个任务需要自己的栈空间。和共享栈空间相比，这会导致一个相对高的内存占用，也会限制同一时刻可以存在的任务数量（例如32位的Linux下每个线程默认分配2MB的栈空间）。另一个缺点是操作系统必须要保存所有寄存器的值，即使当前任务可能只用到了其中的一部分。
+抢占式调度与线程是现代操作系统的基石，它们使得我们能够在操作系统上执行各种各样的不可信任的第三方程序。
+协作式多任务 在协作式多任务下，系统依赖于每个任务自愿放弃CPU的控制，然后才能够执行别的任务。这使得任务能够自己选择更合适的暂停的时机，例如当它需要等待网络IO的时候。
+协作式多任务通常用在语言层面，例如以协程，或者async/await的形式出现，而不是在操作系统层面。实现的思路是由程序员或者编译器在程序中添加yield操作，从而让当前任务放弃CPU，转而执行其他任务。
+协作式多任务通常与异步编程相结合，在异步操作中，一个耗时未完成的IO操作通常会返回&amp;quot;not ready&amp;quot;状态，而不会阻塞当前任务，此时任务就可以通过yield将CPU让给其他任务，直到IO操作ready。
+保存状态 由于任务自己控制暂停的时机，这样就不依赖于操作系统去保存执行状态了。相对应的，任务可以自行保存其恢复执行需要的信息，这通常带来更好的性能。例如，一个任务刚好结束了一个复杂的算法，那么它可能只需要保存最终的计算结果，而不再需要那些中间值了。
+编程语言实现的协作式任务甚至能够在暂停前备份一部分调用栈。例如，Rust的async/await实现会保存在一个自动生成的结构体中保存需要的局部变量。通过保存一部分相关的调用栈，所有任务最终可以共享一个调用栈，这就使得内存消耗更节省，从而几乎可以创建任意数量的协作式任务，而不用担心OOM。
+优缺点 缺点非常明显：任务之间的协作依赖于程序员，否则一个恶意的，或者存在bug的任务会一直执行下去，不主动让出CPU，导致其他任务饿死。因此，协作式多任务仅用于我们知晓每个任务的具体内容的时候，相对的，操作系统层面执行的第三方用户程序肯定不能用协作式调度（因为我们根本不知道这些程序的内容）。
+然而，其性能和内存消耗由于抢占式多任务，因此协作式多任务通常用在单个程序中，尤其是与异步操作协同。
+Rust中的async/await Rust语言提供了以async/await为基础的协作式多任务支持。在我们阐述async/await如何工作之前，我们首先需要理解Rust中的futures和异步编程。
+Futures 一个future代表着一个可能还未准备好的值。例如一个由另一个任务计算出来的整数，或者一个正在下载中的文件。future的概念可以由下面的小例子阐述。
+这个时序图展示了一个main函数首先从文件系统中读取一个文件，然后调用函数foo。这个过程重复了两次，第一次使用同步调用read_file，另一次是异步调用async_read_file。
+通过同步调用，main函数需要等待文件读取完成，才能够执行foo；而通过异步调用，文件系统直接返回一个future，文件的读取异步地在后台运行，而main函数可以进一步执行foo（此时foo和文件的读取过程是并行的）。
+Rust中的future 在Rust中，future的概念由Future这个trait实现，它的定义如下：
+pub trait Future { type Output; fn poll(self: Pin&amp;lt;&amp;amp;mut Self&amp;gt;, cx: &amp;amp;mut Context&amp;lt;&amp;#39;_&amp;gt;) -&amp;gt; Poll&amp;lt;Self::Output&amp;gt;; } 关联类型Output表示这个值的类型，例如async_read_file函数返回的future中，Output应当被设置成File。
+poll方法用于检查该future中的值是否ready，它返回一个枚举类型Poll，其定义为：
+pub enum Poll&amp;lt;T&amp;gt; { Ready(T), Pending, } 当值已经ready时，它被包在Ready里，否则返回Pending，表示值还在准备中。</description>
+    </item>
+    
     <item>
       <title>KMP与AC自动机</title>
       <link>https://zijiaw.github.io/posts/a6-kmpac/</link>
