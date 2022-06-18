@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="Hugo 0.80.0" />
+
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="author" content="一只特立独行的猫" />
+  <meta property="og:url" content="https://zijiaw.github.io/posts/a8-segmenttree/" />
+  <link rel="canonical" href="https://zijiaw.github.io/posts/a8-segmenttree/" /><link rel="alternate" type="application/atom+xml" href="https://zijiaw.github.io/index.xml" title="一只特立独行的猫">
+
+  <script type="application/ld+json">
+  {
+      "@context" : "http://schema.org",
+      "@type" : "BlogPosting",
+      "mainEntityOfPage": {
+           "@type": "WebPage",
+           "@id": "https:\/\/zijiaw.github.io\/"
+      },
+      "articleSection" : "posts",
+      "name" : "算法拾遗：线段树",
+      "headline" : "算法拾遗：线段树",
+      "description" : "线段树（Segment Tree）是一种在数组之上维护的树结构（也叫statistic tree），它能够存储一个数组a，支持下面两个操作：\n 以$O(lgn)$的时间查询数组上的一个区间a[l:r]内的某种统计值，比如查询区间内的元素之和，或区间内的最小值最大值等。 支持以$O(lgn)$的时间修改数组中的某一元素。  基础思想 本节按照求区间和需求解释如何构建并维护一棵线段树。其描述如下：\n 对于数组a[0:n-1]，树的根节点存储整个区间的和，即sum(a[0:n-1])，等价于其维护区间[0:n-1]； 树的任意中间结点，若维护区间[l:r]，则其左子树维护[l:(l\u002br)\/2]，右子树维护区间[(l\u002br)\/2\u002b1:r]； 若l==r，则此为叶子节点，不再分裂。  这些树节点的存储可以借鉴二叉堆的思想，用一个数组t来存各层的树结点：根结点在t[0]，其左孩子位于t[1]，右孩子位于t[2]\u0026hellip;\u0026hellip;以此类推，即t[i]的左孩子为t[2i\u002b1]，右孩子为t[2i\u002b2]。\n复杂度分析 树高 显然树的构建可以递归的完成，因为每次分裂均对区间长度做二分处理，因此树的高度在$lgn$这一量级；\n数据更新 若需要更新数组a[i]=x，则显而易见的做法是从树根递归向下直到对应a[i]的叶子结点，将受影响的区间和进行修改，而每一层的所有区间是不相交的，仅会有一个区间包含a[i]，因此这一过程时间复杂度$O(lgn)$。\n求区间和 求区间a[l:r]的和时，依然是从树根开始递归向下，只是这里可能会出现触发多次递归的情况：\n 若当前结点维护的区间[tl:tr]恰好等于[l:r]，则直接返回其和； 若当前区间[tl:tr]被[l:r]的左半区间，或右半区间包含，则递归至对应子树； 若当前区间与左右半区间均有交集，记中间点为m，则依次递归左子树查询区间[l:m]，递归右子树查询区间[m\u002b1,r]，再求和。  我们证明上面的递归过程中访问的结点数量不超过$4lgn$，从而时间复杂度为$O(lgn)$。\n实际上，我们只需要证明树的每一层中访问到的结点数量不超过4即可。通过归纳法证明，首先在第一层（树根）显然仅1个结点。其次，对于任意层：\n 若访问了2个结点，则下一层最多访问4个结点，因为每个结点最多触发两次递归； 若访问了3或4个结点，则这些结点构成的区间必然是相连的，中间的1个或2个结点必然恰好等于查询的区间，不会触发下一层的递归，仅有最左侧和最右侧的结点可能触发递归，而这也导致下一层不超过4个；  基础实现 对于上面提到的实现，长度$n$的数组，其产生的树高为$\\lceil lgn \\rceil\u002b1$，因此数组大小至多$4n$。通过递归可以完成所有操作。\nclass SegmentTree { vector\u0026lt;int\u0026gt; t; int n; int build(int idx, int l, int r, const vector\u0026lt;int\u0026gt;\u0026amp; a) { if (l == r) return t[idx] = a[l]; int mid = (l \u002b r) \/ 2; return t[idx] = build(2 * idx \u002b 1, l, mid, a) \u002b build(2 * idx \u002b 2, mid \u002b 1, r, a); } void update(int i, int val, int idx, int l, int r) { if (l == r) { t[idx] = val; return; } int mid = (l \u002b r) \/ 2; if (i \u0026lt;= mid) update(i, val, 2 * idx \u002b 1, l, mid); else update(i, val, 2 * idx \u002b 2, mid \u002b 1, r); t[idx] = t[2 * idx \u002b 1] \u002b t[2 * idx \u002b 2]; } int sum(int l, int r, int idx, int tl, int tr) { if (l == tl \u0026amp;\u0026amp; r == tr) return t[idx]; int mid = (tl \u002b tr) \/ 2; if (r \u0026lt;= mid) return sum(l, r, 2 * idx \u002b 1, tl, mid); if (l \u0026gt; mid) return sum(l, r, 2 * idx \u002b 2, mid \u002b 1, tr); return sum(l, mid, 2 * idx \u002b 1, tl, mid) \u002b sum(mid \u002b 1, r, 2 * idx \u002b 2, mid \u002b 1, tr); } public: SegmentTree(const vector\u0026lt;int\u0026gt;\u0026amp; a) : t(4 * a.",
+      "inLanguage" : "en-US",
+      "author" : "一只特立独行的猫",
+      "creator" : "一只特立独行的猫",
+      "publisher": "一只特立独行的猫",
+      "accountablePerson" : "一只特立独行的猫",
+      "copyrightHolder" : "一只特立独行的猫",
+      "copyrightYear" : "2022",
+      "datePublished": "2022-06-18 00:00:00 \u002b0000 UTC",
+      "dateModified" : "2022-06-18 00:00:00 \u002b0000 UTC",
+      "url" : "https:\/\/zijiaw.github.io\/posts\/a8-segmenttree\/",
+      "keywords" : [  ]
+  }
+</script>
+<title>算法拾遗：线段树</title>
+  <meta property="og:title" content="算法拾遗：线段树" />
+  <meta property="og:type" content="article" />
+  <meta property="og:description" content="线段树（Segment Tree）是一种在数组之上维护的树结构（也叫statistic tree），它能够存储一个数组a，支持下面两个操作：
+ 以$O(lgn)$的时间查询数组上的一个区间a[l:r]内的某种统计值，比如查询区间内的元素之和，或区间内的最小值最大值等。 支持以$O(lgn)$的时间修改数组中的某一元素。  基础思想 本节按照求区间和需求解释如何构建并维护一棵线段树。其描述如下：
+ 对于数组a[0:n-1]，树的根节点存储整个区间的和，即sum(a[0:n-1])，等价于其维护区间[0:n-1]； 树的任意中间结点，若维护区间[l:r]，则其左子树维护[l:(l&#43;r)/2]，右子树维护区间[(l&#43;r)/2&#43;1:r]； 若l==r，则此为叶子节点，不再分裂。  这些树节点的存储可以借鉴二叉堆的思想，用一个数组t来存各层的树结点：根结点在t[0]，其左孩子位于t[1]，右孩子位于t[2]&amp;hellip;&amp;hellip;以此类推，即t[i]的左孩子为t[2i&#43;1]，右孩子为t[2i&#43;2]。
+复杂度分析 树高 显然树的构建可以递归的完成，因为每次分裂均对区间长度做二分处理，因此树的高度在$lgn$这一量级；
+数据更新 若需要更新数组a[i]=x，则显而易见的做法是从树根递归向下直到对应a[i]的叶子结点，将受影响的区间和进行修改，而每一层的所有区间是不相交的，仅会有一个区间包含a[i]，因此这一过程时间复杂度$O(lgn)$。
+求区间和 求区间a[l:r]的和时，依然是从树根开始递归向下，只是这里可能会出现触发多次递归的情况：
+ 若当前结点维护的区间[tl:tr]恰好等于[l:r]，则直接返回其和； 若当前区间[tl:tr]被[l:r]的左半区间，或右半区间包含，则递归至对应子树； 若当前区间与左右半区间均有交集，记中间点为m，则依次递归左子树查询区间[l:m]，递归右子树查询区间[m&#43;1,r]，再求和。  我们证明上面的递归过程中访问的结点数量不超过$4lgn$，从而时间复杂度为$O(lgn)$。
+实际上，我们只需要证明树的每一层中访问到的结点数量不超过4即可。通过归纳法证明，首先在第一层（树根）显然仅1个结点。其次，对于任意层：
+ 若访问了2个结点，则下一层最多访问4个结点，因为每个结点最多触发两次递归； 若访问了3或4个结点，则这些结点构成的区间必然是相连的，中间的1个或2个结点必然恰好等于查询的区间，不会触发下一层的递归，仅有最左侧和最右侧的结点可能触发递归，而这也导致下一层不超过4个；  基础实现 对于上面提到的实现，长度$n$的数组，其产生的树高为$\lceil lgn \rceil&#43;1$，因此数组大小至多$4n$。通过递归可以完成所有操作。
+class SegmentTree { vector&amp;lt;int&amp;gt; t; int n; int build(int idx, int l, int r, const vector&amp;lt;int&amp;gt;&amp;amp; a) { if (l == r) return t[idx] = a[l]; int mid = (l &#43; r) / 2; return t[idx] = build(2 * idx &#43; 1, l, mid, a) &#43; build(2 * idx &#43; 2, mid &#43; 1, r, a); } void update(int i, int val, int idx, int l, int r) { if (l == r) { t[idx] = val; return; } int mid = (l &#43; r) / 2; if (i &amp;lt;= mid) update(i, val, 2 * idx &#43; 1, l, mid); else update(i, val, 2 * idx &#43; 2, mid &#43; 1, r); t[idx] = t[2 * idx &#43; 1] &#43; t[2 * idx &#43; 2]; } int sum(int l, int r, int idx, int tl, int tr) { if (l == tl &amp;amp;&amp;amp; r == tr) return t[idx]; int mid = (tl &#43; tr) / 2; if (r &amp;lt;= mid) return sum(l, r, 2 * idx &#43; 1, tl, mid); if (l &amp;gt; mid) return sum(l, r, 2 * idx &#43; 2, mid &#43; 1, tr); return sum(l, mid, 2 * idx &#43; 1, tl, mid) &#43; sum(mid &#43; 1, r, 2 * idx &#43; 2, mid &#43; 1, tr); } public: SegmentTree(const vector&amp;lt;int&amp;gt;&amp;amp; a) : t(4 * a." />
+  <meta name="description" content="线段树（Segment Tree）是一种在数组之上维护的树结构（也叫statistic tree），它能够存储一个数组a，支持下面两个操作：
+ 以$O(lgn)$的时间查询数组上的一个区间a[l:r]内的某种统计值，比如查询区间内的元素之和，或区间内的最小值最大值等。 支持以$O(lgn)$的时间修改数组中的某一元素。  基础思想 本节按照求区间和需求解释如何构建并维护一棵线段树。其描述如下：
+ 对于数组a[0:n-1]，树的根节点存储整个区间的和，即sum(a[0:n-1])，等价于其维护区间[0:n-1]； 树的任意中间结点，若维护区间[l:r]，则其左子树维护[l:(l&#43;r)/2]，右子树维护区间[(l&#43;r)/2&#43;1:r]； 若l==r，则此为叶子节点，不再分裂。  这些树节点的存储可以借鉴二叉堆的思想，用一个数组t来存各层的树结点：根结点在t[0]，其左孩子位于t[1]，右孩子位于t[2]&amp;hellip;&amp;hellip;以此类推，即t[i]的左孩子为t[2i&#43;1]，右孩子为t[2i&#43;2]。
+复杂度分析 树高 显然树的构建可以递归的完成，因为每次分裂均对区间长度做二分处理，因此树的高度在$lgn$这一量级；
+数据更新 若需要更新数组a[i]=x，则显而易见的做法是从树根递归向下直到对应a[i]的叶子结点，将受影响的区间和进行修改，而每一层的所有区间是不相交的，仅会有一个区间包含a[i]，因此这一过程时间复杂度$O(lgn)$。
+求区间和 求区间a[l:r]的和时，依然是从树根开始递归向下，只是这里可能会出现触发多次递归的情况：
+ 若当前结点维护的区间[tl:tr]恰好等于[l:r]，则直接返回其和； 若当前区间[tl:tr]被[l:r]的左半区间，或右半区间包含，则递归至对应子树； 若当前区间与左右半区间均有交集，记中间点为m，则依次递归左子树查询区间[l:m]，递归右子树查询区间[m&#43;1,r]，再求和。  我们证明上面的递归过程中访问的结点数量不超过$4lgn$，从而时间复杂度为$O(lgn)$。
+实际上，我们只需要证明树的每一层中访问到的结点数量不超过4即可。通过归纳法证明，首先在第一层（树根）显然仅1个结点。其次，对于任意层：
+ 若访问了2个结点，则下一层最多访问4个结点，因为每个结点最多触发两次递归； 若访问了3或4个结点，则这些结点构成的区间必然是相连的，中间的1个或2个结点必然恰好等于查询的区间，不会触发下一层的递归，仅有最左侧和最右侧的结点可能触发递归，而这也导致下一层不超过4个；  基础实现 对于上面提到的实现，长度$n$的数组，其产生的树高为$\lceil lgn \rceil&#43;1$，因此数组大小至多$4n$。通过递归可以完成所有操作。
+class SegmentTree { vector&amp;lt;int&amp;gt; t; int n; int build(int idx, int l, int r, const vector&amp;lt;int&amp;gt;&amp;amp; a) { if (l == r) return t[idx] = a[l]; int mid = (l &#43; r) / 2; return t[idx] = build(2 * idx &#43; 1, l, mid, a) &#43; build(2 * idx &#43; 2, mid &#43; 1, r, a); } void update(int i, int val, int idx, int l, int r) { if (l == r) { t[idx] = val; return; } int mid = (l &#43; r) / 2; if (i &amp;lt;= mid) update(i, val, 2 * idx &#43; 1, l, mid); else update(i, val, 2 * idx &#43; 2, mid &#43; 1, r); t[idx] = t[2 * idx &#43; 1] &#43; t[2 * idx &#43; 2]; } int sum(int l, int r, int idx, int tl, int tr) { if (l == tl &amp;amp;&amp;amp; r == tr) return t[idx]; int mid = (tl &#43; tr) / 2; if (r &amp;lt;= mid) return sum(l, r, 2 * idx &#43; 1, tl, mid); if (l &amp;gt; mid) return sum(l, r, 2 * idx &#43; 2, mid &#43; 1, tr); return sum(l, mid, 2 * idx &#43; 1, tl, mid) &#43; sum(mid &#43; 1, r, 2 * idx &#43; 2, mid &#43; 1, tr); } public: SegmentTree(const vector&amp;lt;int&amp;gt;&amp;amp; a) : t(4 * a." />
+  <meta property="og:locale" content="zh-cn" />
+
+  
+    <style>body{font-family:bree serif,sans-serif;-webkit-font-smoothing:antialiased;margin:0 20px}article{max-width:800px;margin-left:auto;margin-right:auto}a{color:#000;text-decoration:none}a:hover{font-weight:600;text-decoration:underline}.post-ads{margin:50px 0}.markdown-body{font-size:18px;max-width:100%}.markdown-body a{text-decoration:underline;text-decoration-color:#000}.markdown-body pre{padding:16px;overflow:auto;border-radius:10px}.markdown-body code{padding:.2em .4em;font-size:85%;background-color:#f6f8fa;border-radius:6px}.markdown-body pre>code{padding:0;font-size:100%;background-color:inherit;border:0}.Chinese .markdown-body{line-height:200%}.site-date-catalog{font-size:2rem}.header-title{font-size:2rem;font-weight:700;margin-top:32px;font-family:bungee shade,sans-serif}.header-title a{text-decoration:none}.header-subtitle{color:#666}.header-items{margin:10px 0}.header-item{margin:0 5px}.header-line{width:100%;border-width:2px;border-color:#482936;border-style:solid none none none}.lang-switch{font-weight:600}#posts-list{min-height:600px}.posts-date,.posts-title{font-size:1.2rem}.posts-line{margin:12px 0}.posts-categories{font-size:.8rem;margin:auto;text-align:center}.posts-category{padding:3px 0;border:#000 2px solid;border-radius:5px;margin-bottom:3px}.site-footer{margin-top:50px}.site-footer-item{margin-right:12px}@media screen and (max-width:600px){.header-title,.header-subtitle,.header-items{text-align:center}.post-content{padding:0 12px}.post-content p{letter-spacing:.05em}}@media screen and (max-width:48em){.posts-category{display:none}}.post-content img{max-width:100%;display:block;margin-left:auto;margin-right:auto;margin-top:12px}.post-header{margin-bottom:50px}.post-title{font-size:2.5rem;font-weight:600}.post-category{display:inline;font-weight:900;padding:2px 5px;border:#000 2px solid;border-radius:5px}.post-date{font-weight:800;font-style:italic}.post-author{float:right;font-weight:600}.page-content{min-height:60%}.post-content{margin-bottom:50px}.post-content p{hyphens:auto;line-height:1.8;text-justify:ideographic;margin-bottom:1em}.related-content{border-width:3px;border-style:solid;border-color:#000;padding:0 10px;margin-bottom:50px;margin-top:100px}.related-content li{margin:5px 0}.taxonomy-term{font-size:3rem}.gallery-img{text-align:center}.gallery-img span{text-align:center}.gallery-img-desc{font-size:.8em;font-weight:800}#disqus_thread{position:relative}#disqus_thread:after{content:"";display:block;height:55px;width:100%;position:absolute;bottom:0;background:#fff}</style>
+  
+  
+    <style>.container,.container-fluid{margin-right:auto;margin-left:auto}.container-fluid{padding-right:2rem;padding-left:2rem}.row{box-sizing:border-box;display:-webkit-box;display:-ms-flexbox;display:flex;-webkit-box-flex:0;-ms-flex:0 1 auto;flex:0 1 auto;-webkit-box-orient:horizontal;-webkit-box-direction:normal;-ms-flex-direction:row;flex-direction:row;-ms-flex-wrap:wrap;flex-wrap:wrap;margin-right:-.5rem;margin-left:-.5rem}.row.reverse{-webkit-box-orient:horizontal;-webkit-box-direction:reverse;-ms-flex-direction:row-reverse;flex-direction:row-reverse}.col.reverse{-webkit-box-orient:vertical;-webkit-box-direction:reverse;-ms-flex-direction:column-reverse;flex-direction:column-reverse}.col-xs,.col-xs-1,.col-xs-10,.col-xs-11,.col-xs-12,.col-xs-2,.col-xs-3,.col-xs-4,.col-xs-5,.col-xs-6,.col-xs-7,.col-xs-8,.col-xs-9,.col-xs-offset-0,.col-xs-offset-1,.col-xs-offset-10,.col-xs-offset-11,.col-xs-offset-12,.col-xs-offset-2,.col-xs-offset-3,.col-xs-offset-4,.col-xs-offset-5,.col-xs-offset-6,.col-xs-offset-7,.col-xs-offset-8,.col-xs-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-xs{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-xs-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-xs-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-xs-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-xs-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-xs-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-xs-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-xs-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-xs-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-xs-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-xs-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-xs-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-xs-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-xs-offset-0{margin-left:0}.col-xs-offset-1{margin-left:8.33333333%}.col-xs-offset-2{margin-left:16.66666667%}.col-xs-offset-3{margin-left:25%}.col-xs-offset-4{margin-left:33.33333333%}.col-xs-offset-5{margin-left:41.66666667%}.col-xs-offset-6{margin-left:50%}.col-xs-offset-7{margin-left:58.33333333%}.col-xs-offset-8{margin-left:66.66666667%}.col-xs-offset-9{margin-left:75%}.col-xs-offset-10{margin-left:83.33333333%}.col-xs-offset-11{margin-left:91.66666667%}.start-xs{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-xs{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-xs{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-xs{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-xs{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-xs{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-xs{-ms-flex-pack:distribute;justify-content:space-around}.between-xs{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-xs{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-xs{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}@media only screen and (min-width:48em){.container{width:49rem}.col-sm,.col-sm-1,.col-sm-10,.col-sm-11,.col-sm-12,.col-sm-2,.col-sm-3,.col-sm-4,.col-sm-5,.col-sm-6,.col-sm-7,.col-sm-8,.col-sm-9,.col-sm-offset-0,.col-sm-offset-1,.col-sm-offset-10,.col-sm-offset-11,.col-sm-offset-12,.col-sm-offset-2,.col-sm-offset-3,.col-sm-offset-4,.col-sm-offset-5,.col-sm-offset-6,.col-sm-offset-7,.col-sm-offset-8,.col-sm-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-sm{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-sm-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-sm-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-sm-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-sm-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-sm-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-sm-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-sm-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-sm-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-sm-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-sm-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-sm-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-sm-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-sm-offset-0{margin-left:0}.col-sm-offset-1{margin-left:8.33333333%}.col-sm-offset-2{margin-left:16.66666667%}.col-sm-offset-3{margin-left:25%}.col-sm-offset-4{margin-left:33.33333333%}.col-sm-offset-5{margin-left:41.66666667%}.col-sm-offset-6{margin-left:50%}.col-sm-offset-7{margin-left:58.33333333%}.col-sm-offset-8{margin-left:66.66666667%}.col-sm-offset-9{margin-left:75%}.col-sm-offset-10{margin-left:83.33333333%}.col-sm-offset-11{margin-left:91.66666667%}.start-sm{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-sm{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-sm{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-sm{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-sm{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-sm{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-sm{-ms-flex-pack:distribute;justify-content:space-around}.between-sm{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-sm{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-sm{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:64em){.container{width:65rem}.col-md,.col-md-1,.col-md-10,.col-md-11,.col-md-12,.col-md-2,.col-md-3,.col-md-4,.col-md-5,.col-md-6,.col-md-7,.col-md-8,.col-md-9,.col-md-offset-0,.col-md-offset-1,.col-md-offset-10,.col-md-offset-11,.col-md-offset-12,.col-md-offset-2,.col-md-offset-3,.col-md-offset-4,.col-md-offset-5,.col-md-offset-6,.col-md-offset-7,.col-md-offset-8,.col-md-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-md{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-md-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-md-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-md-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-md-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-md-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-md-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-md-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-md-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-md-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-md-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-md-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-md-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-md-offset-0{margin-left:0}.col-md-offset-1{margin-left:8.33333333%}.col-md-offset-2{margin-left:16.66666667%}.col-md-offset-3{margin-left:25%}.col-md-offset-4{margin-left:33.33333333%}.col-md-offset-5{margin-left:41.66666667%}.col-md-offset-6{margin-left:50%}.col-md-offset-7{margin-left:58.33333333%}.col-md-offset-8{margin-left:66.66666667%}.col-md-offset-9{margin-left:75%}.col-md-offset-10{margin-left:83.33333333%}.col-md-offset-11{margin-left:91.66666667%}.start-md{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-md{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-md{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-md{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-md{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-md{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-md{-ms-flex-pack:distribute;justify-content:space-around}.between-md{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-md{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-md{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}@media only screen and (min-width:75em){.container{width:76rem}.col-lg,.col-lg-1,.col-lg-10,.col-lg-11,.col-lg-12,.col-lg-2,.col-lg-3,.col-lg-4,.col-lg-5,.col-lg-6,.col-lg-7,.col-lg-8,.col-lg-9,.col-lg-offset-0,.col-lg-offset-1,.col-lg-offset-10,.col-lg-offset-11,.col-lg-offset-12,.col-lg-offset-2,.col-lg-offset-3,.col-lg-offset-4,.col-lg-offset-5,.col-lg-offset-6,.col-lg-offset-7,.col-lg-offset-8,.col-lg-offset-9{box-sizing:border-box;-webkit-box-flex:0;-ms-flex:0 0 auto;flex:0 0 auto;padding-right:.5rem;padding-left:.5rem}.col-lg{-webkit-box-flex:1;-ms-flex-positive:1;flex-grow:1;-ms-flex-preferred-size:0;flex-basis:0;max-width:100%}.col-lg-1{-ms-flex-preferred-size:8.33333333%;flex-basis:8.33333333%;max-width:8.33333333%}.col-lg-2{-ms-flex-preferred-size:16.66666667%;flex-basis:16.66666667%;max-width:16.66666667%}.col-lg-3{-ms-flex-preferred-size:25%;flex-basis:25%;max-width:25%}.col-lg-4{-ms-flex-preferred-size:33.33333333%;flex-basis:33.33333333%;max-width:33.33333333%}.col-lg-5{-ms-flex-preferred-size:41.66666667%;flex-basis:41.66666667%;max-width:41.66666667%}.col-lg-6{-ms-flex-preferred-size:50%;flex-basis:50%;max-width:50%}.col-lg-7{-ms-flex-preferred-size:58.33333333%;flex-basis:58.33333333%;max-width:58.33333333%}.col-lg-8{-ms-flex-preferred-size:66.66666667%;flex-basis:66.66666667%;max-width:66.66666667%}.col-lg-9{-ms-flex-preferred-size:75%;flex-basis:75%;max-width:75%}.col-lg-10{-ms-flex-preferred-size:83.33333333%;flex-basis:83.33333333%;max-width:83.33333333%}.col-lg-11{-ms-flex-preferred-size:91.66666667%;flex-basis:91.66666667%;max-width:91.66666667%}.col-lg-12{-ms-flex-preferred-size:100%;flex-basis:100%;max-width:100%}.col-lg-offset-0{margin-left:0}.col-lg-offset-1{margin-left:8.33333333%}.col-lg-offset-2{margin-left:16.66666667%}.col-lg-offset-3{margin-left:25%}.col-lg-offset-4{margin-left:33.33333333%}.col-lg-offset-5{margin-left:41.66666667%}.col-lg-offset-6{margin-left:50%}.col-lg-offset-7{margin-left:58.33333333%}.col-lg-offset-8{margin-left:66.66666667%}.col-lg-offset-9{margin-left:75%}.col-lg-offset-10{margin-left:83.33333333%}.col-lg-offset-11{margin-left:91.66666667%}.start-lg{-webkit-box-pack:start;-ms-flex-pack:start;justify-content:flex-start;text-align:start}.center-lg{-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;text-align:center}.end-lg{-webkit-box-pack:end;-ms-flex-pack:end;justify-content:flex-end;text-align:end}.top-lg{-webkit-box-align:start;-ms-flex-align:start;align-items:flex-start}.middle-lg{-webkit-box-align:center;-ms-flex-align:center;align-items:center}.bottom-lg{-webkit-box-align:end;-ms-flex-align:end;align-items:flex-end}.around-lg{-ms-flex-pack:distribute;justify-content:space-around}.between-lg{-webkit-box-pack:justify;-ms-flex-pack:justify;justify-content:space-between}.first-lg{-webkit-box-ordinal-group:0;-ms-flex-order:-1;order:-1}.last-lg{-webkit-box-ordinal-group:2;-ms-flex-order:1;order:1}}</style>
+  
+
+  
+
+  <link href="/index.xml" rel="alternate" type="application/rss+xml"
+    title="一只特立独行的猫">
+  
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css?family=Bree+Serif|Bungee+Shade" rel="stylesheet">
+  
+  
+
+  
+  
+</head>
+
+
+<body>
+  
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0-rc.1/contrib/auto-render.min.js"></script>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+      renderMathInElement(document.body, {
+              delimiters: [
+                  {left: "$$", right: "$$", display: true},
+                  {left: "$", right: "$", display: false}
+              ]
+          });
+    });
+</script>
+  <article class="post Chinese" id="article">
+    <div class="row">
+      <div class="col-xs-12">
+        <div class="site-header">
+          
+<header>
+  <div class="header-title">
+    <a href="/"
+      >一只特立独行的猫</a
+    >
+  </div>
+  <div class="header-subtitle"></div>
+</header>
+<div class="row end-md center-xs header-items">
+  
+  <div class="header-item">
+    <a href="https://github.com/ZiJiaW/" target="_blank">GitHub</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="https://www.linkedin.com/in/zijia-wang-865a661a4/" target="_blank">LinkedIn</a>
+  </div>
+  
+  <div class="header-item">
+    <a href="mailto:zijiaw@outlook.com" target="_blank">Email</a>
+  </div>
+  
+</div>
+<div class="row end-xs">
+   
+</div>
+<div class="header-line"></div>
+
+        </div>
+        <header class="post-header">
+          <h1 class="post-title">算法拾遗：线段树</h1>
+          
+          <div class="row post-desc">
+            <div class="col-xs-6">
+              
+              <time class="post-date" datetime="2022-06-18 00:00:00 UTC">
+                18 Jun 2022
+              </time>
+              
+            </div>
+            <div class="col-xs-6">
+              
+              <div class="post-author">
+                <a target="_blank" href="https://zijiaw.github.io/">@一只特立独行的猫</a>
+              </div>
+              
+            </div>
+          </div>
+          
+        </header>
+
+        <div class="post-content markdown-body">
+          
+          <p>线段树（Segment Tree）是一种在数组之上维护的树结构（也叫statistic tree），它能够存储一个数组<code>a</code>，支持下面两个操作：</p>
+<ol>
+<li>以$O(lgn)$的时间查询数组上的一个区间<code>a[l:r]</code>内的某种统计值，比如查询区间内的元素之和，或区间内的最小值最大值等。</li>
+<li>支持以$O(lgn)$的时间修改数组中的某一元素。</li>
+</ol>
+<h2 id="基础思想">基础思想</h2>
+<p>本节按照求区间和需求解释如何构建并维护一棵线段树。其描述如下：</p>
+<ol>
+<li>对于数组<code>a[0:n-1]</code>，树的根节点存储整个区间的和，即<code>sum(a[0:n-1])</code>，等价于其维护区间<code>[0:n-1]</code>；</li>
+<li>树的任意中间结点，若维护区间<code>[l:r]</code>，则其左子树维护<code>[l:(l+r)/2]</code>，右子树维护区间<code>[(l+r)/2+1:r]</code>；</li>
+<li>若<code>l==r</code>，则此为叶子节点，不再分裂。</li>
+</ol>
+<p>这些树节点的存储可以借鉴二叉堆的思想，用一个数组<code>t</code>来存各层的树结点：根结点在<code>t[0]</code>，其左孩子位于<code>t[1]</code>，右孩子位于<code>t[2]</code>&hellip;&hellip;以此类推，即<code>t[i]</code>的左孩子为<code>t[2i+1]</code>，右孩子为<code>t[2i+2]</code>。</p>
+<h2 id="复杂度分析">复杂度分析</h2>
+<h3 id="树高">树高</h3>
+<p>显然树的构建可以递归的完成，因为每次分裂均对区间长度做二分处理，因此树的高度在$lgn$这一量级；</p>
+<h3 id="数据更新">数据更新</h3>
+<p>若需要更新数组<code>a[i]=x</code>，则显而易见的做法是从树根递归向下直到对应<code>a[i]</code>的叶子结点，将受影响的区间和进行修改，而每一层的所有区间是不相交的，仅会有一个区间包含<code>a[i]</code>，因此这一过程时间复杂度$O(lgn)$。</p>
+<h3 id="求区间和">求区间和</h3>
+<p>求区间<code>a[l:r]</code>的和时，依然是从树根开始递归向下，只是这里可能会出现触发多次递归的情况：</p>
+<ol>
+<li>若当前结点维护的区间<code>[tl:tr]</code>恰好等于<code>[l:r]</code>，则直接返回其和；</li>
+<li>若当前区间<code>[tl:tr]</code>被<code>[l:r]</code>的左半区间，或右半区间包含，则递归至对应子树；</li>
+<li>若当前区间与左右半区间均有交集，记中间点为<code>m</code>，则依次递归左子树查询区间<code>[l:m]</code>，递归右子树查询区间<code>[m+1,r]</code>，再求和。</li>
+</ol>
+<p>我们证明上面的递归过程中访问的结点数量不超过$4lgn$，从而时间复杂度为$O(lgn)$。</p>
+<p>实际上，我们只需要证明树的每一层中访问到的结点数量不超过4即可。通过归纳法证明，首先在第一层（树根）显然仅1个结点。其次，对于任意层：</p>
+<ol>
+<li>若访问了2个结点，则下一层最多访问4个结点，因为每个结点最多触发两次递归；</li>
+<li>若访问了3或4个结点，则这些结点构成的区间必然是相连的，中间的1个或2个结点必然恰好等于查询的区间，不会触发下一层的递归，仅有最左侧和最右侧的结点可能触发递归，而这也导致下一层不超过4个；</li>
+</ol>
+<h2 id="基础实现">基础实现</h2>
+<p>对于上面提到的实现，长度$n$的数组，其产生的树高为$\lceil lgn \rceil+1$，因此数组大小至多$4n$。通过递归可以完成所有操作。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cpp" data-lang="cpp"><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">SegmentTree</span> {
+    vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> t;
+    <span style="color:#66d9ef">int</span> n;
+
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">build</span>(<span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r, <span style="color:#66d9ef">const</span> vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;&amp;</span> a)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> r)
+            <span style="color:#66d9ef">return</span> t[idx] <span style="color:#f92672">=</span> a[l];
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (l <span style="color:#f92672">+</span> r) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">return</span> t[idx] <span style="color:#f92672">=</span> build(<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, l, mid, a) <span style="color:#f92672">+</span> 
+                        build(<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>, mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r, a);
+    }
+
+    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">update</span>(<span style="color:#66d9ef">int</span> i, <span style="color:#66d9ef">int</span> val, <span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> r) {
+            t[idx] <span style="color:#f92672">=</span> val;
+            <span style="color:#66d9ef">return</span>;
+        }
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (l <span style="color:#f92672">+</span> r) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">if</span> (i <span style="color:#f92672">&lt;=</span> mid)
+            update(i, val, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, l, mid);
+        <span style="color:#66d9ef">else</span>
+            update(i, val, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>, mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r);
+        t[idx] <span style="color:#f92672">=</span> t[<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>] <span style="color:#f92672">+</span> t[<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>];
+    }
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">sum</span>(<span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r, <span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> tl, <span style="color:#66d9ef">int</span> tr)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> tl <span style="color:#f92672">&amp;&amp;</span> r <span style="color:#f92672">==</span> tr)
+            <span style="color:#66d9ef">return</span> t[idx];
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (tl <span style="color:#f92672">+</span> tr) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">if</span> (r <span style="color:#f92672">&lt;=</span> mid)
+            <span style="color:#66d9ef">return</span> sum(l, r, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tl, mid);
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">&gt;</span> mid)
+            <span style="color:#66d9ef">return</span> sum(l, r, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>, mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tr);
+        <span style="color:#66d9ef">return</span> sum(l, mid, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tl, mid) <span style="color:#f92672">+</span>
+               sum(mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r, <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span>, mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tr);
+    }
+
+<span style="color:#66d9ef">public</span><span style="color:#f92672">:</span>
+    SegmentTree(<span style="color:#66d9ef">const</span> vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;&amp;</span> a)
+        <span style="color:#f92672">:</span> t(<span style="color:#ae81ff">4</span> <span style="color:#f92672">*</span> a.size())
+        , n(a.size())
+    {
+        build(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, a.size() <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, a);
+    }
+
+    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">update</span>(<span style="color:#66d9ef">int</span> i, <span style="color:#66d9ef">int</span> val)
+    {
+        update(i, val, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, n <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+    }
+
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">sum</span>(<span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r)
+    {
+        <span style="color:#66d9ef">return</span> sum(l, r, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, n <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+    }
+};
+</code></pre></div><h2 id="更紧凑的实现">更紧凑的实现</h2>
+<p>再看线段树的构造过程，我们可以确定其构造出的二叉树是一棵满二叉树（所有结点要么是叶子结点，要么有两个孩子），且所有叶子结点表示单个元素区间，也就是说有$n$个叶子节点。这说明该二叉树的结点数量为$2n-1$（可简单归纳证明）。</p>
+<p>而我们之前对树的存储方式下，由于二叉树最后一层会产生空缺，而且不像二叉堆一样是连续的，导致我们不得不使用一个$4n$的数组来存储以应对最坏情况。</p>
+<p>我们可以修改原先的存储方式，原先我们是按照层遍历的顺序存储对应位置的结点于数组中，现在考虑按照先序遍历的顺序进行存储。</p>
+<p>考虑在索引<code>idx</code>下的一个结点，其代表区间<code>[l:r]</code>，我们用索引<code>idx+1</code>来存储其左孩子，此时其左子树代表区间<code>[l:mid]</code>，因此左子树占据的结点数量为$2(mid-l+1)-1$，据此我们可以计算右孩子的索引为$idx+2(mid-l+1)$。以此类推，则二叉树在数组中的存储是紧凑的，只需要$2n-1$长度的数组即可存储。</p>
+<p>下面的代码仅将左右子树根结点在数组中的索引计算修改，即可达到优化效果。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cpp" data-lang="cpp"><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">SegmentTree</span> {
+    vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;</span> t;
+    <span style="color:#66d9ef">int</span> n;
+
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">build</span>(<span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r, <span style="color:#66d9ef">const</span> vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;&amp;</span> a)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> r) {
+            <span style="color:#66d9ef">return</span> t[idx] <span style="color:#f92672">=</span> a[l];
+        }
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (l <span style="color:#f92672">+</span> r) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">return</span> t[idx] <span style="color:#f92672">=</span> build(idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, l, mid, a) <span style="color:#f92672">+</span> 
+                        build(idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> (mid <span style="color:#f92672">-</span> l <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>), mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r, a);
+    }
+
+    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">update</span>(<span style="color:#66d9ef">int</span> i, <span style="color:#66d9ef">int</span> val, <span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> r) {
+            t[idx] <span style="color:#f92672">=</span> val;
+            <span style="color:#66d9ef">return</span>;
+        }
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (l <span style="color:#f92672">+</span> r) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">if</span> (i <span style="color:#f92672">&lt;=</span> mid)
+            update(i, val, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, l, mid);
+        <span style="color:#66d9ef">else</span>
+            update(i, val, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> (mid <span style="color:#f92672">-</span> l <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>), mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r);
+        t[idx] <span style="color:#f92672">=</span> t[idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>] <span style="color:#f92672">+</span> t[idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> (mid <span style="color:#f92672">-</span> l <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>)];
+    }
+
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">sum</span>(<span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r, <span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> tl, <span style="color:#66d9ef">int</span> tr)
+    {
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> tl <span style="color:#f92672">&amp;&amp;</span> r <span style="color:#f92672">==</span> tr)
+            <span style="color:#66d9ef">return</span> t[idx];
+        <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (tl <span style="color:#f92672">+</span> tr) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+        <span style="color:#66d9ef">if</span> (r <span style="color:#f92672">&lt;=</span> mid)
+            <span style="color:#66d9ef">return</span> sum(l, r, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tl, mid);
+        <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">&gt;</span> mid)
+            <span style="color:#66d9ef">return</span> sum(l, r, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> (mid <span style="color:#f92672">-</span> tl <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>), mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tr);
+        <span style="color:#66d9ef">return</span> sum(l, mid, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tl, mid) <span style="color:#f92672">+</span> 
+               sum(mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, r, idx <span style="color:#f92672">+</span> <span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> (mid <span style="color:#f92672">-</span> tl <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>), mid <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, tr);
+    }
+
+<span style="color:#66d9ef">public</span><span style="color:#f92672">:</span>
+    SegmentTree(<span style="color:#66d9ef">const</span> vector<span style="color:#f92672">&lt;</span><span style="color:#66d9ef">int</span><span style="color:#f92672">&gt;&amp;</span> a)
+        <span style="color:#f92672">:</span> t(<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> a.size() <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>)
+        , n(a.size())
+    {
+        build(<span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, a.size() <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>, a);
+    }
+
+    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">update</span>(<span style="color:#66d9ef">int</span> i, <span style="color:#66d9ef">int</span> val)
+    {
+        update(i, val, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, n <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+    }
+
+    <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">sum</span>(<span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r)
+    {
+        <span style="color:#66d9ef">return</span> sum(l, r, <span style="color:#ae81ff">0</span>, <span style="color:#ae81ff">0</span>, n <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>);
+    }
+};
+</code></pre></div><h2 id="应用">应用</h2>
+<h3 id="求区间最值">求区间最值</h3>
+<p>这是最基本的应用，只要把上面的左右子树的merge过程修改为求子树区间的最值（而非求和）即可。</p>
+<h3 id="求区间最大值及其出现次数">求区间最大值及其出现次数</h3>
+<p>在最大值多次出现的时候，我们还想计算其出现的次数。这个问题可以通过在结点处同时存储子树的最大值及出现次数，同时修改merge的过程来处理。</p>
+<h3 id="求区间内最大公约数或最小公倍数">求区间内最大公约数或最小公倍数</h3>
+<p>这也是很简单的变体，只需修改merge过程为求子树的gcd或lcm即可。</p>
+<h3 id="求数组中出现的第k个零的位置">求数组中出现的第k个零的位置</h3>
+<p>不止是零，计算第<code>k</code>个任意数均可以通过修改merge过程，使树结点维护区间内目标元素出现的次数，这样即可根据当前子树下求解的排位<code>k</code>递归计算。</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-cpp" data-lang="cpp"><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">find_kth</span>(<span style="color:#66d9ef">int</span> idx, <span style="color:#66d9ef">int</span> l, <span style="color:#66d9ef">int</span> r, <span style="color:#66d9ef">int</span> k) {
+    <span style="color:#66d9ef">if</span> (k <span style="color:#f92672">&gt;</span> t[idx]) <span style="color:#75715e">// 当前区间内零的数量不足k
+</span><span style="color:#75715e"></span>        <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>;
+    <span style="color:#66d9ef">if</span> (l <span style="color:#f92672">==</span> r)
+        <span style="color:#66d9ef">return</span> l; <span style="color:#75715e">// 找到了
+</span><span style="color:#75715e"></span>    <span style="color:#66d9ef">int</span> mid <span style="color:#f92672">=</span> (l <span style="color:#f92672">+</span> r) <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>;
+    <span style="color:#66d9ef">if</span> (t[idx<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>] <span style="color:#f92672">&gt;=</span> k) <span style="color:#75715e">// 第k个在左子树
+</span><span style="color:#75715e"></span>        <span style="color:#66d9ef">return</span> find_kth(idx<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>, l, mid, k);
+    <span style="color:#66d9ef">else</span>  <span style="color:#75715e">// 第k个在右子树
+</span><span style="color:#75715e"></span>        <span style="color:#66d9ef">return</span> find_kth(idx<span style="color:#f92672">+</span><span style="color:#ae81ff">2</span><span style="color:#f92672">*</span>(mid<span style="color:#f92672">-</span>l<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>), mid<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>, r, k <span style="color:#f92672">-</span> t[idx<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>]);
+}
+</code></pre></div><h3 id="求大于给定值的最短前缀">求大于给定值的最短前缀</h3>
+<p>给定一个正的数组<code>a</code>，以及一个值<code>k</code>，求最小的索引<code>i</code>，使得前缀<code>a[0:i]</code>的和大于<code>k</code>。</p>
+<p>同样地，这个问题可以通过维护区间和来处理，我们递归计算当前区间<code>[l:r]</code>下第一个大于<code>k</code>的前缀位置，若其左子树区间和大于<code>k</code>，则递归进入左子树，否则进入右子树，且目标值减去左子树之和。</p>
+<h3 id="求区间内第一个大于k的元素">求区间内第一个大于k的元素</h3>
+<p>给定一个数组<code>a</code>，求区间<code>[l:r]</code>内第一个大于<code>k</code>的元素<code>a[i]</code>。</p>
+<p>这个问题通过维护区间最大值来处理，考虑当前区间的左子树，若其最大值大于k，则递归进入左子树；否则递归进入右子树。</p>
+<h3 id="求最大的子区间和">求最大的子区间和</h3>
+<p>给定一个数组<code>a</code>，求区间<code>[l:r]</code>内具有最大区间和的子区间<code>a[i:j]</code>，其中<code>l&lt;=i&lt;=j&lt;=r</code>。</p>
+<p>这个问题的求解略复杂，我们需要在树结点中存储如下四个信息：</p>
+<ol>
+<li>区间和</li>
+<li>区间的最大前缀和</li>
+<li>区间的最大后缀和</li>
+<li>最大子区间和</li>
+</ol>
+<p>然后我们递归构建之，首先计算出左子树和右子树下的这组值，则当前位置的最大子区间和能够只有如下三个情况：</p>
+<ol>
+<li>左半区间的最大子区间和</li>
+<li>右半区间的最大子区间和</li>
+<li>左半区间的最大后缀和加上右半区间的最大前缀和</li>
+</ol>
+<p>构建完成后，即可通过递归方式求解指定区间内的最大子区间和，算法和求区间最值一致，只是在组合左右子树的返回值时以上面的思想来计算结果。</p>
+
+        </div>
+
+        <div class="row middle-xs">
+          <div class="col-xs-12">
+            
+            <div class="post-category">
+              <a href="/categories/algorithm/">
+                algorithm
+              </a>
+            </div>
+            
+          </div>
+        </div>
+        
+          <div class="row">
+            <div class="col-xs-12">
+              
+            </div>
+          </div>
+
+          
+
+
+
+          
+          
+          <div style="height: 50px;"></div>
+          
+        
+
+        <div class="site-footer">
+  
+  
+</div>
+
+      </div>
+    </div>
+  </article>
+
+  
+
+<script>
+  
+  
+    
+    
+  
+</script>
+
+  
+
+</body>
+
+</html>

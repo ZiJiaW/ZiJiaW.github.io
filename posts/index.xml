@@ -6,7 +6,25 @@
     <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Mon, 09 Aug 2021 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 18 Jun 2022 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>算法拾遗：线段树</title>
+      <link>https://zijiaw.github.io/posts/a8-segmenttree/</link>
+      <pubDate>Sat, 18 Jun 2022 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a8-segmenttree/</guid>
+      <description>线段树（Segment Tree）是一种在数组之上维护的树结构（也叫statistic tree），它能够存储一个数组a，支持下面两个操作：
+ 以$O(lgn)$的时间查询数组上的一个区间a[l:r]内的某种统计值，比如查询区间内的元素之和，或区间内的最小值最大值等。 支持以$O(lgn)$的时间修改数组中的某一元素。  基础思想 本节按照求区间和需求解释如何构建并维护一棵线段树。其描述如下：
+ 对于数组a[0:n-1]，树的根节点存储整个区间的和，即sum(a[0:n-1])，等价于其维护区间[0:n-1]； 树的任意中间结点，若维护区间[l:r]，则其左子树维护[l:(l+r)/2]，右子树维护区间[(l+r)/2+1:r]； 若l==r，则此为叶子节点，不再分裂。  这些树节点的存储可以借鉴二叉堆的思想，用一个数组t来存各层的树结点：根结点在t[0]，其左孩子位于t[1]，右孩子位于t[2]&amp;hellip;&amp;hellip;以此类推，即t[i]的左孩子为t[2i+1]，右孩子为t[2i+2]。
+复杂度分析 树高 显然树的构建可以递归的完成，因为每次分裂均对区间长度做二分处理，因此树的高度在$lgn$这一量级；
+数据更新 若需要更新数组a[i]=x，则显而易见的做法是从树根递归向下直到对应a[i]的叶子结点，将受影响的区间和进行修改，而每一层的所有区间是不相交的，仅会有一个区间包含a[i]，因此这一过程时间复杂度$O(lgn)$。
+求区间和 求区间a[l:r]的和时，依然是从树根开始递归向下，只是这里可能会出现触发多次递归的情况：
+ 若当前结点维护的区间[tl:tr]恰好等于[l:r]，则直接返回其和； 若当前区间[tl:tr]被[l:r]的左半区间，或右半区间包含，则递归至对应子树； 若当前区间与左右半区间均有交集，记中间点为m，则依次递归左子树查询区间[l:m]，递归右子树查询区间[m+1,r]，再求和。  我们证明上面的递归过程中访问的结点数量不超过$4lgn$，从而时间复杂度为$O(lgn)$。
+实际上，我们只需要证明树的每一层中访问到的结点数量不超过4即可。通过归纳法证明，首先在第一层（树根）显然仅1个结点。其次，对于任意层：
+ 若访问了2个结点，则下一层最多访问4个结点，因为每个结点最多触发两次递归； 若访问了3或4个结点，则这些结点构成的区间必然是相连的，中间的1个或2个结点必然恰好等于查询的区间，不会触发下一层的递归，仅有最左侧和最右侧的结点可能触发递归，而这也导致下一层不超过4个；  基础实现 对于上面提到的实现，长度$n$的数组，其产生的树高为$\lceil lgn \rceil+1$，因此数组大小至多$4n$。通过递归可以完成所有操作。
+class SegmentTree { vector&amp;lt;int&amp;gt; t; int n; int build(int idx, int l, int r, const vector&amp;lt;int&amp;gt;&amp;amp; a) { if (l == r) return t[idx] = a[l]; int mid = (l + r) / 2; return t[idx] = build(2 * idx + 1, l, mid, a) + build(2 * idx + 2, mid + 1, r, a); } void update(int i, int val, int idx, int l, int r) { if (l == r) { t[idx] = val; return; } int mid = (l + r) / 2; if (i &amp;lt;= mid) update(i, val, 2 * idx + 1, l, mid); else update(i, val, 2 * idx + 2, mid + 1, r); t[idx] = t[2 * idx + 1] + t[2 * idx + 2]; } int sum(int l, int r, int idx, int tl, int tr) { if (l == tl &amp;amp;&amp;amp; r == tr) return t[idx]; int mid = (tl + tr) / 2; if (r &amp;lt;= mid) return sum(l, r, 2 * idx + 1, tl, mid); if (l &amp;gt; mid) return sum(l, r, 2 * idx + 2, mid + 1, tr); return sum(l, mid, 2 * idx + 1, tl, mid) + sum(mid + 1, r, 2 * idx + 2, mid + 1, tr); } public: SegmentTree(const vector&amp;lt;int&amp;gt;&amp;amp; a) : t(4 * a.</description>
+    </item>
+    
     <item>
       <title>Rust中的协程: Future与async/await</title>
       <link>https://zijiaw.github.io/posts/a7-rsfuture/</link>
