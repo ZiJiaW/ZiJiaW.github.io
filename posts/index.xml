@@ -6,7 +6,25 @@
     <description>Recent content in Posts on 一只特立独行的猫</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-cn</language>
-    <lastBuildDate>Sat, 18 Jun 2022 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Mon, 20 Jun 2022 00:00:00 +0000</lastBuildDate><atom:link href="https://zijiaw.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>算法拾遗：XGBoost</title>
+      <link>https://zijiaw.github.io/posts/a9-xgboost/</link>
+      <pubDate>Mon, 20 Jun 2022 00:00:00 +0000</pubDate>
+      
+      <guid>https://zijiaw.github.io/posts/a9-xgboost/</guid>
+      <description>本文介绍XGBoost的基本思想。
+一个包含$K$树棵的集成模型中，每棵树的预测结果是一个实数值（回归树），如果我们把每棵树看作是一个函数$f_k$，则对于样本$x_i$的预测结果为这些树的输出之和： $$\hat y_i=\phi(x_i)=\sum_{k=1}^K f_k(x_i)$$ 我们的目标就是求解最优的$K$棵树。
+对于树模型来说，假设有$T$个叶子结点，每棵树会把输入$x$映射到某一个叶子结点$q(x)$上，并输出该叶子节点上预设的值$w_{q(x)}$。上面用$q$来表示一棵树形成的独特映射（将输入映射到叶子结点），而$w$表示叶子结点上的值向量，这二者实际上就代表了一棵树。
+现在我们考虑这样一个模型的损失函数： $$L(\phi)=\sum_il(\hat y_i,y_i) + \sum_{k=1}^K \Omega(f_k)$$ 其中第一项为所有样本上的误差之和，比如平方误差；后一项为正则项，用于限制每棵树的复杂度，复杂度越大惩罚越大，其定义为： $$\Omega(f_k)=\gamma T+\frac{1}{2} \lambda ||w||^2$$ 可以看到其实际上为叶子节点数量$T$与权重$w$的平方和的加权和。
+我们使用迭代的策略来一棵一棵计算上面的树模型，假设在第$t$轮添加的树对应函数为$f_t$，则在前$t-1$棵树已经确定的情况下，损失函数为： $$L(\phi_t)=\sum_i l(\hat y_i^{(t-1)}+f_t(x_i),y_i)+\Omega(f_t)$$ 其中$\hat y_i^{(t-1)}$为前$t-1$棵树的预测结果。我们需要在第$t$轮计算一棵最小化$L(\phi_t)$的树，贪心地加入到模型中。
+上面式中，变量为$f_t(x_i)$，我们将函数$l(\hat y_i^{(t-1)}+f_t(x_i),y_i)$在$\hat y_i^{(t-1)}$处展开到二阶泰勒来近似： $$l(\hat y_i^{(t-1)}+f_t(x_i),y_i)\approx l(\hat y_i^{(t-1)},y_i)+g_if_t(x_i)+\frac{1}{2}h_if_t^2(x_i)$$ 其中$g_i$和$h_i$分别是损失函数$l(a, y_i)$在$a=\hat y_i^{(t-1)}$处的一阶和二阶导数。
+经过近似，我们去掉式中的常量部分，即$l(\hat y_i^{(t-1)},y_i)$，将需最小化的损失函数修改为： $$L(\phi_t)\approx \sum_{i=1}^n[g_if_t(x_i)+\frac{1}{2}h_if_t^2(x_i)]+\gamma T+\frac{1}{2}\lambda\sum_{j=1}^Tw_j^2$$ 现在我们已经将$f_t$单独拿了出来，现在考虑$\sum_i f_t(x_i)$是什么？
+如果$q(x_i)=j$，那么$f_t(x_i)=w_j$，因此假如集合$I_j$是所有被树映射到叶子节点$j$的样本集合，即$I_j={i| q(x_i)=j}$，那么： $$\sum_if_t(x_i)=\sum_{j=1}^T w_j|I_j|$$ 因此损失函数可以变化为： $$L(\phi_t)=\sum_{j=1}^T \big[(\sum_{i\in I_j} g_i)w_j+\frac{1}{2}(\lambda+\sum_{i\in I_j}h_i)w_j^2\big]+\gamma T$$ 上面的式子中，我们可以很快看出每个叶子结点的权值$w_j$的最优取值为： $$w_j^*=-\frac{\sum_{i\in I_j} g_i}{\lambda+\sum_{i\in I_j}h_i}$$ 上式中，$I_j$取决于当前树的结构，而其余部分均为已知的常值，也就是说，如果第$t$棵树的结构确定下来了，那么叶子节点的输出也可以按照上式直接计算出来。
+我们将$w$代入损失函数： $$L(\phi_t)=-\frac{1}{2}\sum_{j=1}^T \frac{(\sum_{i\in I_j} g_i)^2}{\lambda+\sum_{i\in I_j}h_i}+\gamma T$$ 上式给出了一个确定结构的回归树加入后整个模型的损失函数，我们需要构造一棵最小化上式的树。
+我们考虑迭代方式构造树，从根节点开始尝试对叶子结点增加分支，假如对叶子结点$j$增加分支，对映射到该结点的样本再进行划分，将$I_j$划分为$I_l$和$I_r$，作为新的两个叶子结点，而其余结点没有变化，那么新树的损失函数为： $$L_{new}=\gamma + L +\frac{1}{2}\Big(\frac{(\sum_{i\in I_j} g_i)^2}{\lambda+\sum_{i\in I_j}h_i}-\frac{(\sum_{i\in I_l} g_i)^2}{\lambda+\sum_{i\in I_l}h_i}-\frac{(\sum_{i\in I_r} g_i)^2}{\lambda+\sum_{i\in I_r}h_i}\Big)$$ 显然，我们希望划分后产生的新树的损失函数最小，实际上就是要找到一个最优的划分，使得上式最小化，如果把对应结点的式子看作该结点的score，那么就是需要新结点的score之和最大。如果上式最小化后，$L_{new}&amp;gt;=L$，则显然在结点$j$处不可再划分了。</description>
+    </item>
+    
     <item>
       <title>算法拾遗：线段树</title>
       <link>https://zijiaw.github.io/posts/a8-segmenttree/</link>
