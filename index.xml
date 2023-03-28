@@ -85,9 +85,13 @@ pub enum Poll&amp;lt;T&amp;gt; { Ready(T), Pending, } 当值已经ready时，它
       <guid>https://zijiaw.github.io/posts/a6-kmpac/</guid>
       <description>背景 最近又遇到了AC自动机，顺便复习了一下以前学过的KMP算法，两者其实具有很相似的结构，因此写篇文章总结一下。
 KMP算法 问题 KMP算法解决字符串模式匹配问题，给定字符串s和p，计算s中出现p的位置，p即pattern。实际上单就这个问题而言，完全可以采用暴力匹配的方式，假设s的长度为m，p的长度为n，则暴力匹配的时间复杂度为O(mn)，相比之下，KMP算法的时间复杂度为O(m+n)。
-s: abxcabcycabccp: cabcc一些定义 先定义一些东西，方便后面阐释KMP算法背后的思想。
+s: abxcabcycabcc
+p: cabcc
+一些定义 先定义一些东西，方便后面阐释KMP算法背后的思想。
 定义1：
- 前缀 prefix：字符串a是字符串b的前缀，意味着a是b的子串，且出现在开头。 后缀 suffix：字符串a是字符串b的后缀，意味着a是b的子串，且出现为尾部。  &amp;quot;abc&amp;quot; is prefix of &amp;quot;abcdefg&amp;quot;&amp;quot;efg&amp;quot; is suffix of &amp;quot;abcdefg&amp;quot;在本文中，我们只考虑真子串的情况，虽然按照定义，任意字符串自身也是自身的前缀，但这对于KMP来说没有意义。现在，我们可以定义一个有趣的东西：给定字符串s，如果字符串r既是s的前缀，也是s的后缀，它就是s的公共前后缀。
+ 前缀 prefix：字符串a是字符串b的前缀，意味着a是b的子串，且出现在开头。 后缀 suffix：字符串a是字符串b的后缀，意味着a是b的子串，且出现为尾部。  &amp;quot;abc&amp;quot; is prefix of &amp;quot;abcdefg&amp;quot;
+&amp;quot;efg&amp;quot; is suffix of &amp;quot;abcdefg&amp;quot;
+在本文中，我们只考虑真子串的情况，虽然按照定义，任意字符串自身也是自身的前缀，但这对于KMP来说没有意义。现在，我们可以定义一个有趣的东西：给定字符串s，如果字符串r既是s的前缀，也是s的后缀，它就是s的公共前后缀。
 如上图，当我们用模式p匹配字符串s时，如果s中多次出现的p存在重叠的情况，那么重叠部分其实就是p的一个公共前后缀。
 然后我们可以发现公共前后缀的两个有趣的性质：
 性质：
@@ -114,7 +118,7 @@ s: abxcabcycabccp: cabcc一些定义 先定义一些东西，方便后面阐�
 go的内存回收有GOGC变量控制，默认为100，即堆内存达到上次回收后内存的两倍时触发自动gc，此外如果两分钟未触发过gc，则会强制触发。这个服务内存占用本身比较高，因此默认情况下很少会主动触发gc，一般都是2min一次强制gc。在这2min内这些失引用的对象就一直占用着本就捉襟见肘的内存，自然会导致内存占用极高，而且会随qps升高而升高。
 于是这里我做的优化是用sync.Pool复用更基础的对象——哈希表的结点，在之前我们复用哈希表是无效的，因为哈希表清空后，其内部数据失引用。因此我自己实现一个简易版本的链式哈希表，这样其内部的结点可以手动管理，用于对象复用，定义如下：
 type Node struct { key int val int next *Node } var NodePool *sync.Pool = &amp;amp;sync.Pool { New: func() interface{} { return &amp;amp;Node{} }, } 链式哈希表的实现就很简单了（不会的话自行google），在这里我使用固定的entry大小，不考虑哈希表的扩容（因为场景很单一，kv数量不会很多），在申请结点和free结点的时候从NodePool中取即可。经过这么优化，服务的内存占用骤降，从~7G一下子降到了4~5G，OOM的问题就完全解决了。
-CPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一抖音上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。
+CPU性能 实际上这么实现后一段时间服务都没什么问题，无论是从内存还是延迟都有提升，直到今年五一上了一个新功能后，这个服务的qps涨了近30%，于是放假第一天晚上高峰期qps一下上到50w，错误率就涨到了2%，于是假期结束后又开始追查问题了。
 经过压测可以观察到延迟的抖动以基本固定的2min间隔发生，那么基本上可以确定是gc导致的。回顾一下Golang的gc机制，可以参考这篇文章：
   清理终止阶段；
 暂停程序，所有的处理器在这时会进入安全点（Safe point）；
@@ -142,7 +146,24 @@ Blocking I/O 在传统的阻塞式IO编程中，一次包含I/O请求的函数�
 Non-blocking I/O 除了阻塞式IO，大多数现代操作系统支持另一种获取资源的方式——非阻塞式I/O。在这种模式下，涉及IO的系统调用总是立即返回，而不等待数据读写完成。如果在调用时数据未就绪，则调用会返回一个预定义的值，表示当前数据未准备好。
 例如，在Unix系统中，fcntl()函数可以用来控制一个已有的文件操作符，将其的读写模式改变为非阻塞（用O_NONBLOCK标志位）。一旦文件操作在非阻塞模式下，如果该文件还没有数据可读，则读操作会返回EAGAIN。
 最基本的使用非阻塞IO的编程范式是在一个循环里不断地轮询相应接口，直到有数据返回——这被称为忙等待。下面的伪代码展示了这一逻辑：
-resources = [socketA, socketB, pipeA];while(!resources.isEmpty()) {for(i = 0; i &amp;lt; resources.length; i++) {resource = resources[i];//try to readvar data = resource.read();if(data === NO_DATA_AVAILABLE)//there is no data to read at the momentcontinue;if(data === RESOURCE_CLOSED)//the resource was closed, remove it from the listresources.remove(i);else//some data was received, process itconsumeData(data);}}你可以看到，这么简单的代码已经可以在单线程里面处理多个I/O资源的读写了，但还不够高效。事实上，在上面的例子中，忙等待会浪费很多CPU时间——因为大多数时候资源都是不可用的。我们希望等到资源可用的时候能够自动通知线程，而不是线程一直循环着浪费CPU资源。</description>
+resources = [socketA, socketB, pipeA];
+while(!resources.isEmpty()) {
+for(i = 0; i &amp;lt; resources.length; i++) {
+resource = resources[i];
+//try to read
+var data = resource.read();
+if(data === NO_DATA_AVAILABLE)
+//there is no data to read at the moment
+continue;
+if(data === RESOURCE_CLOSED)
+//the resource was closed, remove it from the list
+resources.remove(i);
+else
+//some data was received, process it
+consumeData(data);
+}
+}
+你可以看到，这么简单的代码已经可以在单线程里面处理多个I/O资源的读写了，但还不够高效。事实上，在上面的例子中，忙等待会浪费很多CPU时间——因为大多数时候资源都是不可用的。我们希望等到资源可用的时候能够自动通知线程，而不是线程一直循环着浪费CPU资源。</description>
     </item>
     
     <item>
@@ -176,22 +197,44 @@ Basic Paxos  Paxos算法有多种变体，但其基本思想均来源于basic pa
       <description>本文内容来自angular-jwt博客。
 什么是JWT JWT全称为JSON Web Token，是一种跨域认证机制。一个JWT包含3部分，Header，Payload和Signature。通常经过编码后的jwt token会被放在header的authorization字段，以Bearer &amp;lt;token&amp;gt;的形式随请求传递，作为用户的临时凭证。
 payload就是一个简单的json对象，比如下面这个payload包含了用户名，邮箱什么的，但实际上你可以放任何信息，比如转账流水之类的：
-{&amp;quot;name&amp;quot;: &amp;quot;John Doe&amp;quot;,&amp;quot;email&amp;quot;: &amp;quot;john@johndoe.com&amp;quot;,&amp;quot;admin&amp;quot;: true}虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。
+{
+&amp;quot;name&amp;quot;: &amp;quot;John Doe&amp;quot;,
+&amp;quot;email&amp;quot;: &amp;quot;john@johndoe.com&amp;quot;,
+&amp;quot;admin&amp;quot;: true
+}
+虽然对于payload里面的内容没有限制，但是需要注意的是，JWT本身并没有被加密，也就是说不要把敏感信息放在payload里面，可能会受到黑客攻击。
 payload里的内容需要由消息的接受者去校验，校验需要用到签名（signature），但是签名的种类很多，因此我们需要一个额外的字段来指出发送方使用的是哪种签名。这类信息就放在header里面，实际上header也是一个json，例如下面的东西：
-{&amp;quot;alg&amp;quot;: &amp;quot;RS256&amp;quot;,&amp;quot;typ&amp;quot;: &amp;quot;JWT&amp;quot;}可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。
+{
+&amp;quot;alg&amp;quot;: &amp;quot;RS256&amp;quot;,
+&amp;quot;typ&amp;quot;: &amp;quot;JWT&amp;quot;
+}
+可以看到这个header指明了我们使用的签名算法是RS256，关于签名，后面还会讲，现在我们先看看如何通过签名来校验payload的合法性。
 signature通常是用消息和一个密钥按照某种特定的签名算法生成的字符串，其认证过程如下：
  用户提交用户名和密码到认证服务器 服务器验证用户名和密码是正确的，则生成一个JWT，在payload里面注明用户的标识符，及其失效时间 服务器将payload和header放在一起，制作一个签名，三者组成一个JWT，返还给用户 用户拿到JWT后，后续每次请求服务都会把JWT带上 应用服务器后续用JWT作为用户的临时身份认证，不再需要用户再去输密码手动验证了  应用服务器按如下方式从JWT中确认用户信息：
  首先验证签名和内容是一致的，也就是说消息没有被篡改过 通过payload中的id来找到用户  这样，一个第三方的攻击者要么通过窃取用户名和密码来模仿用户，要么通过窃取认证服务器上的密钥才能破解这一过程。
 签名机制保证一个无状态的服务器可以仅仅通过请求中带过来的一串JWT认证用户，而不需要用户每次都带上用户名和密码。
 JWT这一机制的另一个显著的好处是可以将应用服务器和认证服务器分离，把认证功能单独抽出来，其他服务仅需要进行校验JWT即可，让其他服务更快更简洁。
 更多细节 编码 我们来实际看看一个JWT长啥样，下面这个例子来自于jwt.io的在线JWT认证工具：
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：
-Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9.TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+你可以看到这个和之前我们说的好像不太一样，我们仔细观察一下，这串字符串是三个字符串以.组合在一起的，实际上第一部分是header，第二部分是payload，第三部分是signature：
+Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
+Payload: eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWV9
+Signature: TJVA95OrM7E2cBab30RMHrHDcEfxjoYZgeFONFh7HgQ
+但是这几个字符串依然不是人类可读的样子，这是因为我们对原始的内容做了编码，把二进制内容编码成全部ASCII字符可以避免很多网络传输中的编解码错误，例如不同的电脑，浏览器，文本编辑器使用不用的编码格式，比如utf8，utf16，ISO 8859-1等。我们为了避免这类问题，通常使用base64编码算法把任何字符串变成特定的一些字符。
 不过还有一点不一样，JWT里面用的不是Base64，而是Base64Url，它和base64在某些字符上不太一样，以保证最终生成的字符串可以放在url中传输。
 现在我们把payload部分输入到base64解码网站，比如base64decode，就能得到下面这串内容：
-{&amp;quot;sub&amp;quot;:&amp;quot;1234567890&amp;quot;,&amp;quot;name&amp;quot;:&amp;quot;John Doe&amp;quot;, &amp;quot;admin&amp;quot;:true}这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。
+{
+&amp;quot;sub&amp;quot;:&amp;quot;1234567890&amp;quot;,
+&amp;quot;name&amp;quot;:&amp;quot;John Doe&amp;quot;, &amp;quot;admin&amp;quot;:true
+}
+这样就看到它的真面目了，实际上这一串操作是在请求中传json数据的基本操作。
 现在我们再看看payload里面具体要传的东西是哪些，下面是一个具体的例子，这几个字段都是官方提供的可选字段：
-{&amp;quot;iss&amp;quot;: &amp;quot;Identifier of our Authentication Server&amp;quot;,&amp;quot;iat&amp;quot;: 1504699136, &amp;quot;sub&amp;quot;: &amp;quot;github|353454354354353453&amp;quot;,&amp;quot;exp&amp;quot;: 1504699256} iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。</description>
+{
+&amp;quot;iss&amp;quot;: &amp;quot;Identifier of our Authentication Server&amp;quot;,
+&amp;quot;iat&amp;quot;: 1504699136, &amp;quot;sub&amp;quot;: &amp;quot;github|353454354354353453&amp;quot;,
+&amp;quot;exp&amp;quot;: 1504699256
+}
+ iss指的是issuing entity，即颁发认证的认证服务器 iat指的是此JWT的创建时间戳 sub指服务器生成的用户的唯一标识符 exp包含过期时间  这就是所谓的Bearer Token，bearer指持有者，也就是说持有此token的用户拥有sub定义的用户权限。</description>
     </item>
     
     <item>
@@ -203,13 +246,20 @@ Header: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9Payload: eyJzdWIiOiIxMjM0NTY3ODkwIi
       <description>本文是阅读新版tokio文档，顺便翻译之作，啥时候读完啥时候写完咯。
 Intruduction 本教程将一步步带你构建一个简化的Redis客户端和服务器。我们首先介绍Rust中异步编程的基本概念，而后实现Redis命令的一个子集。
 Mini-Redis 安装完成Rust以后，请安装Mini-Redis服务器程序，这可以用来测试我们的程序：
-cargo install mini-redis你可以键入如下命令开始程序：
-mini-redis-server而后你可以另起一个命令行，用自带的客户端程序尝试获取键foo：
-mini-redis-cli get foo你将看到输出为nil。
+cargo install mini-redis
+你可以键入如下命令开始程序：
+mini-redis-server
+而后你可以另起一个命令行，用自带的客户端程序尝试获取键foo：
+mini-redis-cli get foo
+你将看到输出为nil。
 Hello Tokio 引入 我们首先编写非常基础的Tokio应用，它将连接到我们的Mini-Redis服务器，插入键值对&amp;lt;hello, world&amp;gt;，而后我们用cli包来获取它，以验证正确性。
 首先我们用carge创建新的Rust应用目录：
-cargo new my-rediscd my-redis而后编辑Cargo.toml，添加依赖：
-tokio = { version = &amp;quot;0.3&amp;quot;, features = [&amp;quot;full&amp;quot;] }mini-redis = &amp;quot;0.3&amp;quot;现在我们可以编辑main.rs，代码如下：
+cargo new my-redis
+cd my-redis
+而后编辑Cargo.toml，添加依赖：
+tokio = { version = &amp;quot;0.3&amp;quot;, features = [&amp;quot;full&amp;quot;] }
+mini-redis = &amp;quot;0.3&amp;quot;
+现在我们可以编辑main.rs，代码如下：
 use mini_redis::{client, Result}; #[tokio::main] pub async fn main() -&amp;gt; Result&amp;lt;()&amp;gt; { // Open a connection to the mini-redis address.  let mut client = client::connect(&amp;#34;127.0.0.1:6379&amp;#34;).await?; // Set the key &amp;#34;hello&amp;#34; with value &amp;#34;world&amp;#34;  client.</description>
     </item>
     
